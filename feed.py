@@ -115,6 +115,7 @@ class feed(threading.Thread):
     self.multiline = False
     self.multiline_out = False
     if self.outstream:
+      self.articles_to_send = list()
       while self.running and not connected:
         self.state = 'connecting'
         try:
@@ -139,9 +140,17 @@ class feed(threading.Thread):
     while self.running:
       if self.con_broken:
         if not self.outstream:
+          print "[{0}] not an outstream, terminating".format(self.name)
           break
         else:
-          if self.debug > 1: print "[{0}] connection broken. reconnecting..".format(self.name)
+          if self.debug > 1: print "[{0}] connection broken".format(self.name)
+          if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
+            if self.debug > 1: print "[{0}] no article to send, sleeping".format(self.name)
+            while(self.running and self.queue.qsize() == 0):
+              time.sleep(2)
+            if not self.running:
+              break
+          if self.debug > 1: print "[{0}] reconnecting..".format(self.name)
           self.state = 'connecting'
           connected = False
           try:
@@ -188,7 +197,8 @@ class feed(threading.Thread):
             # 32 Broken pipe
             # 104 Connection reset by peer
             self.con_broken = True
-            break
+            continue
+            #break
           else:
             print e
             raise e
@@ -199,7 +209,8 @@ class feed(threading.Thread):
         #print "[{0}] received: {1}".format(self.name, received)
         if received == 0:
           self.con_broken = True
-          break
+          #break
+          continue
         if not '\r\n' in in_buffer:
           continue
         parts = in_buffer.split('\r\n')
@@ -382,7 +393,7 @@ class feed(threading.Thread):
         elif commands[0] == '203':
           # MODE STREAM test successfull
           self.outstream_stream = True
-          self.articles_to_send = list()
+          #self.articles_to_send = list()
           self.outstream_ready = True
         elif commands[0] == '501':
           if self.outstream_currently_testing == '':
