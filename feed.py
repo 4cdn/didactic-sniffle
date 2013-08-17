@@ -132,8 +132,6 @@ class feed(threading.Thread):
     poll = select.poll()
     poll.register(self.socket.fileno(), select.POLLIN | select.POLLPRI)
     poll = poll.poll
-    #byte = ''
-    #self.buffer = list()
     self.buffer_multiline = list()
     self.con_broken = False
     in_buffer = ''
@@ -173,9 +171,6 @@ class feed(threading.Thread):
               poll.register(self.socket.fileno(), select.POLLIN | select.POLLPRI)
               poll = poll.poll
               in_buffer = ''
-              #byte = ''
-              #del self.buffer[:]
-              #del self.buffer_multiline[:]
               self.multiline = False
               self.reconnect = False
               self.state = 'idle'
@@ -238,52 +233,6 @@ class feed(threading.Thread):
           if not self.multiline:
             self.state = 'idle'
         continue
-        #while byte != '\n':
-        #  try:
-        #    byte = self.socket.recv(1)
-        #  except socket.error as e:
-        #    if e.errno == 11:
-        #      # 11 Resource temporarily unavailable
-        #      time.sleep(0.3)
-        #      continue
-        #    elif e.errno == 32 or e.errno == 104:
-        #      # 32 Broken pipe
-        #      # 104 Connection reset by peer
-        #      self.con_broken = True
-        #      break
-        #    else:
-        #      print e
-        #      raise e
-        #      #if self.debug > 1: print "[{0}] connection problem: {1}".format(self.name, e)
-        #      #self.con_broken = True
-        #      #break
-        #  if len(byte) == 0:
-        #    self.con_broken = True
-        #    break
-        #  if byte == '\r':
-        #    continue
-        #  elif byte != '\n':
-        #    self.buffer.append(byte)
-        #    continue
-        #  if not self.multiline:
-        #    self.handle_line(''.join(self.buffer))
-        #  elif len(self.buffer) != 1:
-        #    self.buffer_multiline.append(''.join(self.buffer))
-        #    if self.debug > 3: print "[{0}] multiline in: {1}".format(self.name, ''.join(self.buffer))
-        #  else:
-        #    if self.buffer[0] == '.':
-        #      self.handle_multiline(self.buffer_multiline)
-        #      self.multiline = False
-        #      del self.buffer_multiline[:]
-        #    else:
-        #      self.buffer_multiline.append(self.buffer[0])
-        #      if self.debug > 3: print "[{0}] multiline in: {1}".format(self.name, self.buffer[0])
-        #  del self.buffer[:]
-        #  self.last_action = int(time.time())
-        #byte = ''
-        #if not self.multiline:
-        #  self.state = 'idle'
-        #continue
       else:
         #print "[{0}] timeout hit, state = {1}".format(self.name, self.state)
         if self.outstream_ready and self.state == 'idle':
@@ -345,8 +294,7 @@ class feed(threading.Thread):
     sent = 0
     length = len(article)
     while sent != length:
-      #if self.debug > 4 and sent > 0:
-      if self.debug > 0 and sent > 0:
+      if self.debug > 4 and sent > 0:
         print "[{0}] resending part of line, starting at {1} to {2}".format(self.name, sent, length)
       try:
         sent += self.socket.send(article[sent:])
@@ -393,7 +341,6 @@ class feed(threading.Thread):
         elif commands[0] == '203':
           # MODE STREAM test successfull
           self.outstream_stream = True
-          #self.articles_to_send = list()
           self.outstream_ready = True
         elif commands[0] == '501':
           if self.outstream_currently_testing == '':
