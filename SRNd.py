@@ -440,14 +440,14 @@ class SRNd(threading.Thread):
     self.update_hooks()
 
     #  self.feeds[name].start()
-    print
+    #print
     #files = filter(os.path.isfile, os.listdir('articles'))
-    files = filter(lambda f: os.path.isfile(os.path.join('articles', f)), os.listdir('articles'))
-    files.sort(key=lambda f: os.path.getmtime(os.path.join('articles', f)))
-    for name in self.feeds:
-      if name.startswith('outfeed'):
-        for item in files:
-          self.feeds[name].add_article(item)
+    #files = filter(lambda f: os.path.isfile(os.path.join('articles', f)), os.listdir('articles'))
+    #files.sort(key=lambda f: os.path.getmtime(os.path.join('articles', f)))
+    #for name in self.feeds:
+    #  if name.startswith('outfeed'):
+    #    for item in files:
+    #      self.feeds[name].add_article(item)
 
     self.dropper.start()
     while self.running:
