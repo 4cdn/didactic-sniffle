@@ -1,5 +1,8 @@
 Overchan allows to create an (usually) decentralized imageboard based on NNTP articles.
 
+Requires Python PIL library. Debian based distributions may install it via apt-get install python-imaging.
+
+
 This plugin parses NNTP articles and creates static HTML documents.
 Which NNTP articles are parsed depends on the hook configuration in data/config/hooks/plugins/overchan, usually all articles belonging to any group in the namespace overchan.* (see hooks.txt for details).
 

@@ -126,6 +126,7 @@ class SRNd(threading.Thread):
     # read configuration
     # FIXME think about path.. always use data/config/SRNd.conf unless argument states otherwise?
     config_file = os.path.join('data', 'config', 'SRNd.conf')
+    writeConfig = False
     if os.path.exists(config_file):
       self.ip = ''
       self.port = 0
