@@ -503,15 +503,15 @@ class main(threading.Thread):
         elif part.get_content_type().lower() == 'text/plain':
           message += part.get_payload(decode=True)
         else:
-          message += '----' + part.get_content_type() + '----\n'
-          message += 'invalid content type: ' + part.get_content_type() + '\n'
+          message += '----' + part.get_content_type() + '----\n\n'
+          message += 'invalid content type\n'
           message += '----' + part.get_content_type() + '----\n\n'
     else:
       if result.get_content_type().lower() == 'text/plain':
         message += result.get_payload(decode=True)
       else:
-        message += '----' + result.get_content_type() + '----\n'
-        message += 'invalid content type: ' + part.get_content_type() + '\n'
+        message += '----' + result.get_content_type() + '----\n\n'
+        message += 'invalid content type\n'
         message += '----' + result.get_content_type() + '----\n\n'
     del result
     message = self.basicHTMLencode(message)
