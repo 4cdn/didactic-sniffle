@@ -480,7 +480,7 @@ class main(threading.Thread):
               thumb_name = 'invalid'
           os.remove(tmp_link)
           #os.rename('tmp/tmpImage', 'html/img/' + imagelink) # damn remote file systems and stuff
-        elif part.get_content_type().lower() == 'application/pdf' or part.get_content_type().lower() == 'application/postscript':
+        elif part.get_content_type().lower() in ('application/pdf', 'application/postscript', 'application/ps'):
           tmp_link = os.path.join(self.temp_directory, 'tmpImage')
           f = open(tmp_link, 'w')
           f.write(part.get_payload(decode=True))
@@ -503,14 +503,14 @@ class main(threading.Thread):
         elif part.get_content_type().lower() == 'text/plain':
           message += part.get_payload(decode=True)
         else:
-          message += '----' + part.get_content_type() + '----\n\n'
+          message += '\n----' + part.get_content_type() + '----\n'
           message += 'invalid content type\n'
           message += '----' + part.get_content_type() + '----\n\n'
     else:
       if result.get_content_type().lower() == 'text/plain':
         message += result.get_payload(decode=True)
       else:
-        message += '----' + result.get_content_type() + '----\n\n'
+        message += '\n----' + result.get_content_type() + '----\n'
         message += 'invalid content type\n'
         message += '----' + result.get_content_type() + '----\n\n'
     del result
