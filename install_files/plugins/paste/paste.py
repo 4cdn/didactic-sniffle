@@ -158,7 +158,7 @@ class main(threading.Thread):
     if self.generate_full_html_on_start:
       self.log("regenerating all HTML files..", 2)
       for row in self.sqlite.execute('SELECT hash, sender, subject, sent, body FROM pastes ORDER BY sent ASC').fetchall():
-        generate_paste(row[0][:10], row[4], row[2], row[1], row[3])
+        self.generate_paste(row[0][:10], row[4], row[2], row[1], row[3])
       self.recreate_index()
     while self.running:
       try:
