@@ -116,10 +116,14 @@ class postman(BaseHTTPRequestHandler):
       file_name = post_vars['file'].filename
       if file_name != '':
         content_type = post_vars['file'].type
+        allowed = False
         for mime in self.origin.frontends[frontend]['allowed_files']:
-          if not ((mime[-1] == '*' and content_type.startswith(mime[:-1])) or content_type == mime):
-            self.die('{0} not in allowed_files'.format(content_type))
-            return
+          if (mime[-1] == '*' and content_type.startswith(mime[:-1])) or content_type == mime:
+            allowed = True
+            break
+        if not allowed:
+          self.die('{0} not in allowed_files'.format(content_type))
+          return
         redirect_duration = 4
     uid_host = self.origin.frontends[frontend]['uid_host']
     # web.news.sfor.ano
