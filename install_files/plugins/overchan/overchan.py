@@ -55,6 +55,7 @@ class main(threading.Thread):
         return
     self.no_file = args['no_file']
     self.invalid_file = args['invalid_file']
+    self.document_file = args['document_file']
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.log("replacement for root posts without picture not found: {0}".format(os.path.join(self.template_directory, self.no_file)), 0)
       self.log("terminating..", 0)
@@ -65,6 +66,14 @@ class main(threading.Thread):
         return
     if not os.path.exists(os.path.join(self.template_directory, self.invalid_file)):
       self.log("replacement for posts with invalid pictures not found: {0}".format(os.path.join(self.template_directory, self.invalid_file)), 0)
+      self.log("terminating..", 0)
+      self.should_terminate = True
+      if __name__ == '__main__':
+        exit(1)
+      else:
+        return
+    if not os.path.exists(os.path.join(self.template_directory, self.document_file)):
+      self.log("replacement for posts with documents attached (.pdf, .ps) not found: {0}".format(os.path.join(self.template_directory, self.document_file)), 0)
       self.log("terminating..", 0)
       self.should_terminate = True
       if __name__ == '__main__':
@@ -174,6 +183,7 @@ class main(threading.Thread):
         os.mkdir(directory)
     del required_dirs
     # TODO use softlinks or at least cp instead
+    # TODO remote filesystems suck as usual
     link = os.path.join(self.output_directory, 'img', self.no_file)
     if not os.path.exists(link):
       f = open(os.path.join(self.template_directory, self.no_file), 'r')
@@ -192,6 +202,20 @@ class main(threading.Thread):
     if not os.path.exists(link):
       try:
         something = Image.open(os.path.join(self.template_directory, self.invalid_file))
+        modifier = float(180) / something.size[0]
+        x = int(something.size[0] * modifier)
+        y = int(something.size[1] * modifier)
+        if not (something.mode == 'RGBA' or something.mode == 'LA'):
+          something = something.convert('RGB')
+        something = something.resize((x,y), Image.ANTIALIAS)
+        something.save(link, optimize=True)
+        del something
+      except IOError as e:
+        self.log("error: can't save {0}. wtf? {1}".format(link, e), 0)
+    link = os.path.join(self.output_directory, 'thumbs', self.document_file)
+    if not os.path.exists(link):
+      try:
+        something = Image.open(os.path.join(self.template_directory, self.document_file))
         modifier = float(180) / something.size[0]
         x = int(something.size[0] * modifier)
         y = int(something.size[1] * modifier)
@@ -396,6 +420,7 @@ class main(threading.Thread):
     image_name_original = ''
     image_name = ''
     thumb_name = ''
+    message = ''
     # TODO: check if out dir is remote fs, use os.rename if not
     if result.is_multipart():
       for part in result.get_payload():
@@ -455,19 +480,39 @@ class main(threading.Thread):
               thumb_name = 'invalid'
           os.remove(tmp_link)
           #os.rename('tmp/tmpImage', 'html/img/' + imagelink) # damn remote file systems and stuff
+        elif part.get_content_type().lower() == 'application/pdf' or part.get_content_type().lower() == 'application/postscript':
+          tmp_link = os.path.join(self.temp_directory, 'tmpImage')
+          f = open(tmp_link, 'w')
+          f.write(part.get_payload(decode=True))
+          f.close()
+          # get hash for filename
+          f = open(tmp_link, 'r')
+          image_name_original = self.basicHTMLencode(part.get_filename())
+          imagehash = sha1(f.read()).hexdigest()
+          image_name = imagehash + '.' + image_name_original.split('.')[-1].lower()
+          out_link = os.path.join(self.output_directory, 'img', image_name)
+          f.close()
+          # copy to out directory with new filename
+          c = open(out_link, 'w')
+          f = open(tmp_link, 'r')
+          c.write(f.read())
+          c.close()
+          f.close()
+          thumb_name = 'document'
+          os.remove(tmp_link)
         elif part.get_content_type().lower() == 'text/plain':
-          message = part.get_payload(decode=True)
+          message += part.get_payload(decode=True)
         else:
-          message = '----' + part.get_content_type() + '----\n'
-          message += part.get_payload() + '\n'
-          message += '----' + part.get_content_type() + '----'
+          message += '----' + part.get_content_type() + '----\n'
+          message += 'invalid content type: ' + part.get_content_type() + '\n'
+          message += '----' + part.get_content_type() + '----\n\n'
     else:
       if result.get_content_type().lower() == 'text/plain':
-        message = result.get_payload(decode=True)
+        message += result.get_payload(decode=True)
       else:
-        message = '----' + result.get_content_type() + '----\n'
-        message += result.get_payload() + '\n'
-        message += '----' + result.get_content_type() + '----'
+        message += '----' + result.get_content_type() + '----\n'
+        message += 'invalid content type: ' + part.get_content_type() + '\n'
+        message += '----' + result.get_content_type() + '----\n\n'
     del result
     message = self.basicHTMLencode(message)
     for group_id in group_ids:
@@ -524,10 +569,12 @@ class main(threading.Thread):
       thread_counter += 1
       if root_row[6] != '':
         root_imagelink = root_row[6]
-        if root_row[7] != 'invalid':
-          root_thumblink = root_row[7]
-        else:
+        if root_row[7] == 'document':
+          root_thumblink = self.document_file
+        elif root_row[7] == 'invalid':
           root_thumblink = self.invalid_file
+        else:
+          root_thumblink = root_row[7]
       else:
         root_imagelink = self.no_file
         root_thumblink = self.no_file
@@ -553,10 +600,12 @@ class main(threading.Thread):
         #  self.log('message hash for {0} not found. wtf?'.format(child_row[0]), 0)
         #  continue
         if child_row[6] != '':
-          if child_row[7] != 'invalid':
-            child_thumblink = child_row[7]
-          else:
+          if child_row[7] == 'invalid':
             child_thumblink = self.invalid_file
+          elif child_row[7] == 'document':
+            child_thumblink = self.document_file
+          else:
+            child_thumblink = child_row[7]
           childTemplate = self.template_message_child_pic.replace('%%imagelink%%', child_row[6])
           childTemplate = childTemplate.replace('%%thumblink%%', child_thumblink)
           childTemplate = childTemplate.replace('%%imagename%%', child_row[5])
@@ -621,10 +670,12 @@ class main(threading.Thread):
     self.log("generating {0}/thread-{1}.html".format(self.output_directory, root_message_id_hash[:10]), 2)
     if root_row[6] != '':
       root_imagelink = root_row[6]
-      if root_row[7] != 'invalid':
-        root_thumblink = root_row[7]
-      else:
+      if root_row[7] == 'invalid':
         root_thumblink = self.invalid_file
+      elif root_row[7] == 'document':
+        root_thumblink = self.document_file
+      else:
+        root_thumblink = root_row[7]
     else:
       root_imagelink = self.no_file
       root_thumblink = self.no_file
@@ -646,10 +697,12 @@ class main(threading.Thread):
       #  self.log('message hash for {0} not found. wtf?'.format(child_row[0]), 0)
       #  continue
       if child_row[6] != '':
-        if child_row[7] != 'invalid':
-          child_thumblink = child_row[7]
-        else:
+        if child_row[7] == 'invalid':
           child_thumblink = self.invalid_file
+        elif child_row[7] == 'document':
+          child_thumblink = self.document_file
+        else:
+          child_thumblink = child_row[7]
         childTemplate = self.template_message_child_pic.replace('%%imagelink%%', child_row[6])
         childTemplate = childTemplate.replace('%%thumblink%%', child_thumblink)
         childTemplate = childTemplate.replace('%%imagename%%', child_row[5])

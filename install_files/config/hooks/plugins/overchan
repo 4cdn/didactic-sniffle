@@ -13,6 +13,7 @@
 #start_param temp_directory=plugins/overchan/tmp
 #start_param invalid_file=invalid.png
 #start_param no_file=nope.png
+#start_param document_file=document.png
 #start_param debug=2
 
 overchan.*
