@@ -153,6 +153,13 @@ class main(threading.Thread):
     self.running = True
     self.regenerate_index = False
     self.log("starting up as plugin..", 2)
+    # TODO create startup var for generate_full_html_on_start
+    self.generate_full_html_on_start = True
+    if self.generate_full_html_on_start:
+      self.log("regenerating all HTML files..", 2)
+      for row in self.sqlite.execute('SELECT hash, sender, subject, sent, body FROM pastes ORDER BY sent ASC').fetchall():
+        generate_paste(row[0][:10], row[4], row[2], row[1], row[3])
+      self.recreate_index()
     while self.running:
       try:
         message_id = self.queue.get(block=True, timeout=1)
@@ -174,6 +181,53 @@ class main(threading.Thread):
 
   def basicHTMLencode(self, input):
     return input.replace('<', '&lt;').replace('>', '&gt;')
+
+  def generate_paste(self, identifier, paste_content, subject, sender, sent):
+    f = open(os.path.join(self.outputDirectory, identifier + '.txt'), 'w')
+    f.write(paste_content)
+    f.close()
+    self.log("new paste: {0}".format(subject), 2)
+    found = False
+    try:
+      if '.' in subject:
+        if subject[-1] == ')':
+          if ' (' in subject:
+            name = subject.split(' (')[0]
+          elif '(' in subject:
+            name = subject.split('(')[0]
+          else:
+            name = subject
+        else:
+          name = subject
+        if name.split('.')[-1] in self.recognized_extenstions:
+          lexer = guess_lexer_for_filename(name, paste_content, encoding='utf-8')
+          found = True
+      if not found:
+        if len(bar) >= 2:
+          if bar[:2] == '#!':
+            lexer = guess_lexer(paste_content, encoding='utf-8')
+            if lexer.name not in self.allowed_lexers:
+              lexer = get_lexer_by_name('text', encoding='utf-8')
+          else:
+            lexer = get_lexer_by_name('text', encoding='utf-8')
+        else:
+          lexer = get_lexer_by_name('text', encoding='utf-8')
+    except ClassNotFound as e:
+      self.log("{0}: {1}".format(subject, e), 0)
+      lexer = get_lexer_by_name('text', encoding='utf-8')
+    except ImportError as e:
+      self.log("{0}: {1}".format(subject, e), 0)
+      lexer = get_lexer_by_name('text', encoding='utf-8')
+    result = highlight(paste_content, lexer, self.formatter)
+    template = self.template_single_paste.replace('%%title%%', subject)
+    template = template.replace('%%sender%%', sender)
+    template = template.replace('%%sent%%', datetime.utcfromtimestamp(sent).strftime('%Y/%m/%d %H:%M UTC'))
+    template = template.replace('%%identifier%%', identifier)
+    template = template.replace('%%paste%%', result)
+    f = open(os.path.join(self.outputDirectory, identifier + '.html'), 'w')
+    f.write(template)
+    f.close()
+    del result, template
 
   def parse_message(self, message_id, message_content):
     if self.sqlite.execute('SELECT hash FROM pastes WHERE article_uid = ?', (message_id,)).fetchone():
@@ -207,54 +261,10 @@ class main(threading.Thread):
       elif message_content[index] == '\n':
         bar = message_content[index+1:]
         break
-    bar = ''.join(bar)
-    f = open(os.path.join(self.outputDirectory, identifier + '.txt'), 'w')
-    f.write(bar)
-    f.close()
-    self.log("new paste: {0}".format(subject), 2)
-    found = False
-    try:
-      if '.' in subject:
-        if subject[-1] == ')':
-          if ' (' in subject:
-            name = subject.split(' (')[0]
-          elif '(' in subject:
-            name = subject.split('(')[0]
-          else:
-            name = subject
-        else:
-          name = subject
-        if name.split('.')[-1] in self.recognized_extenstions:
-          lexer = guess_lexer_for_filename(name, bar, encoding='utf-8')
-          found = True
-      if not found:
-        if len(bar) >= 2:
-          if bar[:2] == '#!':
-            lexer = guess_lexer(bar, encoding='utf-8')
-            if lexer.name not in self.allowed_lexers:
-              lexer = get_lexer_by_name('text', encoding='utf-8')
-          else:
-            lexer = get_lexer_by_name('text', encoding='utf-8')
-        else:
-          lexer = get_lexer_by_name('text', encoding='utf-8')
-    except ClassNotFound as e:
-      self.log("{0}: {1}".format(subject, e), 0)
-      lexer = get_lexer_by_name('text', encoding='utf-8')
-    except ImportError as e:
-      self.log("{0}: {1}".format(subject, e), 0)
-      lexer = get_lexer_by_name('text', encoding='utf-8')
-    result = highlight(bar, lexer, self.formatter)
-    template = self.template_single_paste.replace('%%title%%', subject)
-    template = template.replace('%%sender%%', sender)
-    template = template.replace('%%sent%%', datetime.utcfromtimestamp(sent).strftime('%Y/%m/%d %H:%M UTC'))
-    template = template.replace('%%identifier%%', identifier)
-    template = template.replace('%%paste%%', result)
-    f = open(os.path.join(self.outputDirectory, identifier + '.html'), 'w')
-    f.write(template)
-    f.close()
+    self.generate_paste(identifier, ''.join(bar), subject, sender, sent)
     self.sqlite.execute('INSERT INTO pastes VALUES (?,?,?,?,?,?,?,?,?)', (message_id, hash_message_uid, sender.decode('UTF-8'), email.decode('UTF-8'), subject.decode('UTF-8'), sent, ''.join(bar).decode('UTF-8'), '', int(time.time())))
     self.sqlite_conn.commit()
-    del result, bar, template
+    del bar
     return True
 
   def recreate_index(self):
