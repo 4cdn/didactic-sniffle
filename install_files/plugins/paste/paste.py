@@ -203,8 +203,8 @@ class main(threading.Thread):
           lexer = guess_lexer_for_filename(name, paste_content, encoding='utf-8')
           found = True
       if not found:
-        if len(bar) >= 2:
-          if bar[:2] == '#!':
+        if len(paste_content) >= 2:
+          if paste_content[:2] == '#!':
             lexer = guess_lexer(paste_content, encoding='utf-8')
             if lexer.name not in self.allowed_lexers:
               lexer = get_lexer_by_name('text', encoding='utf-8')
