@@ -10,6 +10,7 @@ from calendar import timegm
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import guess_lexer, guess_lexer_for_filename, get_lexer_by_name, ClassNotFound
+import codecs
 
 if __name__ == '__main__':
   import signal
@@ -183,7 +184,7 @@ class main(threading.Thread):
     return input.replace('<', '&lt;').replace('>', '&gt;')
 
   def generate_paste(self, identifier, paste_content, subject, sender, sent):
-    f = open(os.path.join(self.outputDirectory, identifier + '.txt'), 'w')
+    f = codecs.open(os.path.join(self.outputDirectory, identifier + '.txt'), 'w', encoding='utf-8')
     f.write(paste_content)
     f.close()
     self.log("new paste: {0}".format(subject), 2)
@@ -218,13 +219,13 @@ class main(threading.Thread):
     except ImportError as e:
       self.log("{0}: {1}".format(subject, e), 0)
       lexer = get_lexer_by_name('text', encoding='utf-8')
-    result = highlight(paste_content, lexer, self.formatter)
+    result = highlight(paste_content, lexer, self.formatter).decode('utf-8')
     template = self.template_single_paste.replace('%%title%%', subject)
     template = template.replace('%%sender%%', sender)
     template = template.replace('%%sent%%', datetime.utcfromtimestamp(sent).strftime('%Y/%m/%d %H:%M UTC'))
     template = template.replace('%%identifier%%', identifier)
     template = template.replace('%%paste%%', result)
-    f = open(os.path.join(self.outputDirectory, identifier + '.html'), 'w')
+    f = codecs.open(os.path.join(self.outputDirectory, identifier + '.html'), 'w', encoding='utf-8')
     f.write(template)
     f.close()
     del result, template
@@ -261,7 +262,7 @@ class main(threading.Thread):
       elif message_content[index] == '\n':
         bar = message_content[index+1:]
         break
-    self.generate_paste(identifier, ''.join(bar), subject, sender, sent)
+    self.generate_paste(identifier, ''.join(bar).decode('UTF-8'), subject, sender, sent)
     self.sqlite.execute('INSERT INTO pastes VALUES (?,?,?,?,?,?,?,?,?)', (message_id, hash_message_uid, sender.decode('UTF-8'), email.decode('UTF-8'), subject.decode('UTF-8'), sent, ''.join(bar).decode('UTF-8'), '', int(time.time())))
     self.sqlite_conn.commit()
     del bar
@@ -306,20 +307,12 @@ class main(threading.Thread):
       self.handle_new(None, None)
 
 if __name__ == '__main__':
-  #hook_dir = '/home/user/dev/anonet/nntp/SRNd/data/hooks/paste/'
-  #templateDirectory = '/home/user/dev/anonet/nntp/SRNd/data/plugins/paste/'
-  #outputDirectory = '/home/user/dev/anonet/nntp/SRNd/data/plugins/paste/out/'
-  #foo = paster(templateDirectory, outputDirectory, hook_dir)
   args = dict()
   args['watch_directory'] = 'hooks/paste'
   args['template_directory'] = 'plugins/paste/templates'
   args['output_directory'] = 'plugins/paste/out'
   args['database_directory'] = 'plugins/paste'
   args['debug'] = '5'
-  #hook_dir = 'hooks/paste/'
-  #templateDirectory = 'plugins/paste/'
-  #outputDirectory = 'plugins/paste/out/'
-  #foo = paster('plugins/paste', 'plugins/paste/out', 'hooks/paste')
   foo = main('paster', args)
   foo.start()
   while True:
