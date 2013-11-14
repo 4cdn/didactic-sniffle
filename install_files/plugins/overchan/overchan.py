@@ -115,6 +115,11 @@ class main(threading.Thread):
     f.close()
 
     if __name__ == '__main__':
+      i = open(os.path.join(self.template_directory, 'master.css'), 'r')
+      o = open(os.path.join(self.output_directory, 'styles.css'), 'w')
+      o.write(i.read())
+      o.close()
+      i.close()
       if not 'watch_dir' in args:
         self.log("watch_dir not in args.", 0)
         self.log("terminating", 0)
@@ -184,6 +189,11 @@ class main(threading.Thread):
     del required_dirs
     # TODO use softlinks or at least cp instead
     # TODO remote filesystems suck as usual
+    i = open(os.path.join(self.template_directory, 'master.css'), 'r')
+    o = open(os.path.join(self.output_directory, 'styles.css'), 'w')
+    o.write(i.read())
+    o.close()
+    i.close()
     link = os.path.join(self.output_directory, 'img', self.no_file)
     if not os.path.exists(link):
       f = open(os.path.join(self.template_directory, self.no_file), 'r')
