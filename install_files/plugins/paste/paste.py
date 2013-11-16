@@ -28,7 +28,7 @@ class main(threading.Thread):
     self.name = thread_name
     self.should_terminate = False
     self.debug = 5
-    for arg in ('template_directory', 'output_directory', 'database_directory'):
+    for arg in ('template_directory', 'output_directory', 'database_directory', 'css_file'):
       if not arg in args:
         self.log('error: {0} not in arguments'.format(arg), 0)
         self.log('terminating', 0)
@@ -40,8 +40,14 @@ class main(threading.Thread):
     self.outputDirectory = args['output_directory']
     self.database_directory = args['database_directory']
     self.templateDirectory = args['template_directory']
+    self.css_file = args['css_file']
     if not os.path.exists(self.templateDirectory):
       self.log("error: template directory '{0}' does not exist".format(self.templateDirectory), 0)
+      self.log("terminating", 0)
+      self.should_terminate = True
+      return
+    if not os.path.exists(os.path.join(self.templateDirectory, self.css_file)):
+      self.log("error: specified CSS file not found in template directory: '{0}' does not exist.".format(os.path.join(self.templateDirectory, self.css_file)), 0)
       self.log("terminating", 0)
       self.should_terminate = True
       return
@@ -114,7 +120,7 @@ class main(threading.Thread):
     if __name__ == '__main__':
       self.busy = False
       self.retry = False
-      i = open(os.path.join(self.templateDirectory, 'master.css'), 'r')
+      i = open(os.path.join(self.templateDirectory, self.css_file), 'r')
       o = open(os.path.join(self.outputDirectory, 'styles.css'), 'w')
       o.write(i.read())
       o.close()
@@ -141,7 +147,7 @@ class main(threading.Thread):
       os.mkdir(self.outputDirectory)
     if not os.path.exists(self.database_directory):
       os.mkdir(self.database_directory)
-    i = open(os.path.join(self.templateDirectory, 'master.css'), 'r')
+    i = open(os.path.join(self.templateDirectory, self.css_file), 'r')
     o = open(os.path.join(self.outputDirectory, 'styles.css'), 'w')
     o.write(i.read())
     o.close()

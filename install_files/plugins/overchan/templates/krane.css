@@ -1,0 +1,95 @@
+ body {
+        margin: 0px;
+        background: #101010 !important;
+        font-family: arial,helvetica,sans-serif;
+        color:#ffffff !important;
+        font-size: 10pt;
+      }
+      table {
+        font-size: 10pt;
+      }
+      a {
+        color: #f7acb1 !important;
+      }
+      hr {
+        color: #363636 !important;
+        width: 98% !important;
+        height: 0px !important;
+        border-top: 1px solid !important;
+        border-bottom: none !important;
+      }
+      .filedescription {
+        font-style: italic;
+      }
+      .messageroot {
+        margin-bottom: 1px;
+        border: none !important;
+        background:  #101010 !important;
+        padding: 5px;
+      }
+      .message {
+        margin-left: 25px;
+        margin-bottom: 1px;
+        border: 1px solid #363636 !important;
+        background: #1c1c1c !important;
+        border-radius: 0px !important;
+        padding: 5px;
+      }
+      .image_link {
+        float: left;
+        padding-right: 5px;
+      }
+      .image_root {
+        border-radius: 0px !important;
+        border: 1px solid #363636 !important;
+        width: 180px;
+      }
+      .image {
+        border-radius: 0px !important; 
+        border: 1px solid #363636 !important;
+        width: 150px;
+      }
+      .thread {
+        padding-top: 5px;
+        padding-left: 10px;
+        padding-right: 20px;
+      }
+      .message_span {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+     .topicline b{
+        color:#ff1493 !important;
+     }
+      .postform th {
+        background: #1c1c1c !important;
+        border: 1px solid #363636 !important;
+        text-align: left;
+        padding-left: 4px;
+        padding-right: 5px;
+      }
+      .posttext {
+        width: 400px;
+        height: 20px;
+        border: 1px solid #363636 !important;
+        background: #ffffff !important;
+      }
+      .postbutton {
+        width: 100px;
+        border: 1px solid #363636 !important;
+        background: #ffffff !important;
+      }
+      .postarea {
+        width: 400px;
+        height: 48px;
+        border: 1px solid #363636 !important;
+        background: #ffffff !important;
+        padding: 0px;
+        margin: 0px;
+      }
+      .postfile {
+      }
+      .boards a,
+      .pagelist a{
+        text-decoration: none !important;
+      }

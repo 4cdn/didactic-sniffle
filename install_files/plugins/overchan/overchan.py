@@ -29,7 +29,7 @@ class main(threading.Thread):
     # FIXME read debuglevel here
 
     error = ''
-    for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file'):
+    for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file'):
       if not arg in args:
         error += "  {0} not in arguments\n".format(arg)
     if error != '':
@@ -56,6 +56,8 @@ class main(threading.Thread):
     self.no_file = args['no_file']
     self.invalid_file = args['invalid_file']
     self.document_file = args['document_file']
+    self.css_file = args['css_file']
+    # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.log("replacement for root posts without picture not found: {0}".format(os.path.join(self.template_directory, self.no_file)), 0)
       self.log("terminating..", 0)
@@ -74,6 +76,14 @@ class main(threading.Thread):
         return
     if not os.path.exists(os.path.join(self.template_directory, self.document_file)):
       self.log("replacement for posts with documents attached (.pdf, .ps) not found: {0}".format(os.path.join(self.template_directory, self.document_file)), 0)
+      self.log("terminating..", 0)
+      self.should_terminate = True
+      if __name__ == '__main__':
+        exit(1)
+      else:
+        return
+    if not os.path.exists(os.path.join(self.template_directory, self.css_file)):
+      self.log("specified CSS file not found in template directory: {0}".format(os.path.join(self.template_directory, self.css_file)), 0)
       self.log("terminating..", 0)
       self.should_terminate = True
       if __name__ == '__main__':
@@ -115,7 +125,7 @@ class main(threading.Thread):
     f.close()
 
     if __name__ == '__main__':
-      i = open(os.path.join(self.template_directory, 'master.css'), 'r')
+      i = open(os.path.join(self.template_directory, self.css_file), 'r')
       o = open(os.path.join(self.output_directory, 'styles.css'), 'w')
       o.write(i.read())
       o.close()
@@ -188,8 +198,9 @@ class main(threading.Thread):
         os.mkdir(directory)
     del required_dirs
     # TODO use softlinks or at least cp instead
-    # TODO remote filesystems suck as usual
-    i = open(os.path.join(self.template_directory, 'master.css'), 'r')
+    # TODO remote filesystems (sshfs, not sure about NFS in this context) suck as usual
+    # FIXME messy code is messy
+    i = open(os.path.join(self.template_directory, self.css_file), 'r')
     o = open(os.path.join(self.output_directory, 'styles.css'), 'w')
     o.write(i.read())
     o.close()
