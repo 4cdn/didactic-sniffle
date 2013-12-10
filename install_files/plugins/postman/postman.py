@@ -8,12 +8,14 @@ from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from urllib import unquote
 from cgi import FieldStorage
 import base64
-from hashlib import sha1
+from hashlib import sha1, sha512
+from binascii import hexlify
 from datetime import datetime
 import os
 import threading
 import sqlite3
 import socket
+import nacl.signing
 if __name__ == '__main__':
   import nntplib
 
@@ -132,9 +134,19 @@ class postman(BaseHTTPRequestHandler):
     email = self.origin.frontends[frontend]['defaults']['email']
     subject = self.origin.frontends[frontend]['defaults']['subject']
 
+    signature = False
     if 'name' in post_vars:
       if post_vars['name'].value != '':
         name = post_vars['name'].value
+        signature = False
+        if '#' in name and len(name) >= 65:
+          if name[-65] == '#':
+            try:
+              keypair = nacl.signing.SigningKey(name[-64:], encoder=nacl.encoding.HexEncoder)
+              signature = True
+            except Execption as e:
+              self.origin.log("can't create keypair: %s" % e, 2)
+            name = name[:-65]
     if 'email' in post_vars:
       #FIXME add email validation: .+@.+\..+
       if post_vars['email'].value != '':
@@ -166,15 +178,44 @@ class postman(BaseHTTPRequestHandler):
     boundary = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(40))
     date = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
     #f = open('tmp/' + boundary, 'w')
-    link = os.path.join('incoming', 'tmp', boundary)
+    if signature:
+      link = os.path.join('incoming', 'tmp', boundary + '_')
+    else:
+      link = os.path.join('incoming', 'tmp', boundary)
     f = open(link, 'w')
     if file_name == '':
       f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment))
     else:
       f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name))
       base64.encode(post_vars['file'].file, f)
-      f.write('--{0}--'.format(boundary))
+      f.write('--{0}--\n'.format(boundary))
     f.close()
+    if signature:
+      hasher = sha512()
+      f = open(link, 'r')
+      oldline = None
+      for line in f:
+        if oldline:
+          hasher.update(oldline)
+        oldline = line.replace("\n", "\r\n")
+      #f.close()
+      oldline = oldline.replace("\r\n", "")
+      hasher.update(oldline)
+      signature = hexlify(keypair.sign(hasher.digest()).signature)
+      pubkey = hexlify(keypair.verify_key.encode())
+      signed = open(link[:-1], 'w')
+      f = open(link, 'r')
+      link = link[:-1]
+      signed.write(self.origin.template_message_signed.format(sender, date, group, subject, message_uid, reply, uid_host, pubkey, signature))
+      f.seek(0)
+      for line in f:
+        signed.write(line)
+      f.close()
+      signed.close()
+      del hasher
+      del keypair
+      del pubkey
+      del signature
     try:
       self.send_response(200)
       self.send_header('Content-type', 'text/html')
@@ -261,6 +302,9 @@ class main(threading.Thread):
     f.close()
     f = open(os.path.join(template_directory, 'message_pic.template'), 'r')
     self.httpd.template_message_pic = f.read()
+    f.close()
+    f = open(os.path.join(template_directory, 'message_signed.template'), 'r')
+    self.httpd.template_message_signed = f.read()
     f.close()
 
     # read frontends

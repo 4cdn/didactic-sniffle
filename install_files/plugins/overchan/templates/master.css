@@ -84,3 +84,17 @@ body {
         //border: 1px solid #aaaaaa;
         //background: #dedede;
       }
+      .stillevil {
+        margin-top: 0px;
+        margin-bottom: 0px;
+        margin-left: 10px;
+        display: none;
+      }
+      .evilmod {
+        position: absolute;
+        right: 0px;
+        top: 0px;
+      }
+      .evilmod:checked ~ form .stillevil {
+        display: inline;
+      }

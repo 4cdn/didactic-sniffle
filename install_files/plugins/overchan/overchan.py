@@ -9,10 +9,12 @@ import string
 import os
 import threading
 import urllib
-from hashlib import sha1
+from hashlib import sha1, sha512
 from email.feedparser import FeedParser
 import Image
 import codecs
+import nacl.signing
+from binascii import unhexlify
 if __name__ == '__main__':
   import signal
   import fcntl
@@ -91,7 +93,7 @@ class main(threading.Thread):
       else:
         return
     error = ''
-    for template in ('board.tmpl', 'board_threads.tmpl', 'thread_single.tmpl', 'message_root.tmpl', 'message_child_pic.tmpl', 'message_child_nopic.tmpl'):
+    for template in ('board.tmpl', 'board_threads.tmpl', 'thread_single.tmpl', 'message_root.tmpl', 'message_child_pic.tmpl', 'message_child_nopic.tmpl', 'signed.tmpl', 'help.tmpl'):
       template_file = os.path.join(self.template_directory, template)
       if not os.path.exists(template_file):
         error += "{0} missing\n".format(template_file)
@@ -122,6 +124,12 @@ class main(threading.Thread):
     f.close()
     f = open(os.path.join(self.template_directory, 'message_child_nopic.tmpl'))
     self.template_message_child_nopic = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'signed.tmpl'))
+    self.template_signed = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'help.tmpl'))
+    self.template_help = f.read()
     f.close()
 
     if __name__ == '__main__':
@@ -255,7 +263,11 @@ class main(threading.Thread):
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS groups
                (group_id INTEGER PRIMARY KEY AUTOINCREMENT, group_name text UNIQUE, article_count INTEGER, last_update INTEGER)''')
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS articles
-               (article_uid text, group_id INTEGER, sender text, email text, subject text, sent INTEGER, parent text, message text, imagename text, imagelink text, thumblink text, last_update INTEGER, PRIMARY KEY (article_uid, group_id))''')
+               (article_uid text, group_id INTEGER, sender text, email text, subject text, sent INTEGER, parent text, message text, imagename text, imagelink text, thumblink text, last_update INTEGER, public_key text, PRIMARY KEY (article_uid, group_id))''')
+    try:
+      self.sqlite.execute('ALTER TABLE articles ADD COLUMN public_key text')
+    except:
+      pass
     self.sqlite_conn.commit()
     #self.sqlite_hashes_conn = sqlite3.connect('hashes.db3')
     #self.sqlite_hashes = self.sqlite_hashes_conn.cursor()
@@ -341,6 +353,8 @@ class main(threading.Thread):
     parent = ''
     groups = list()
     sage = False
+    signature = None
+    public_key = ''
     header_found = False
     parser = FeedParser()
     line = fd.readline()
@@ -377,6 +391,10 @@ class main(threading.Thread):
           groups.append(group_in)
       elif lower_line.startswith('x-sage:'):
         sage = True
+      elif lower_line.startswith("x-pubkey-ed25519:"):
+        public_key = lower_line[:-1].split(' ', 1)[1]
+      elif lower_line.startswith("x-signature-ed25519-sha512:"):
+        signature = lower_line[:-1].split(' ', 1)[1]
       elif line == '\n':
         header_found = True
         break
@@ -385,6 +403,12 @@ class main(threading.Thread):
     if not header_found:
       self.log("{0} malformed article".format(message_id), 2)
       return False
+    if signature:
+      if public_key != '':
+        self.log("got signature with length %i and content '%s'" %(len(signature), signature), 3)
+        self.log("got public_key with length %i and content '%s'" %(len(public_key), public_key), 3)
+        if not (len(signature) == 128 and len(public_key) == 64):
+          public_key = ''
     group_ids = list()
     for group in groups:
       result = self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=?', (group,)).fetchone()
@@ -434,6 +458,25 @@ class main(threading.Thread):
         self.regenerate_threads.append(message_id)
 
     #parser = FeedParser()
+    if public_key != '':
+      bodyoffset = fd.tell()
+      hasher = sha512()
+      oldline = None
+      for line in fd:
+        if oldline:
+          hasher.update(oldline)
+        oldline = line.replace("\n", "\r\n")
+      hasher.update(oldline.replace("\r\n", ""))
+      fd.seek(bodyoffset)
+      try:
+        self.log("trying to validate signature.. ", 2)
+        nacl.signing.VerifyKey(unhexlify(public_key)).verify(hasher.digest(), unhexlify(signature))
+        self.log("validated", 2)
+      except Exception as e:
+        public_key = ''
+        self.log("failed: %s" % e, 2)
+      del hasher
+      del signature
     parser.feed(fd.read())
     fd.close()
     result = parser.close()
@@ -444,7 +487,11 @@ class main(threading.Thread):
     message = ''
     # TODO: check if out dir is remote fs, use os.rename if not
     if result.is_multipart():
+      self.log('message is multipart, length: %i' % len(result.get_payload()), 3)
+      if len(result.get_payload()) == 1 and result.get_payload()[0].get_content_type() == "multipart/mixed":
+        result = result.get_payload()[0]
       for part in result.get_payload():
+        self.log('got part == %s' % part.get_content_type(), 3)
         if part.get_content_type().startswith('image/'):
           tmp_link = os.path.join(self.temp_directory, 'tmpImage')
           f = open(tmp_link, 'w')
@@ -537,7 +584,7 @@ class main(threading.Thread):
     del result
     message = self.basicHTMLencode(message)
     for group_id in group_ids:
-      self.sqlite.execute('INSERT INTO articles(article_uid, group_id, sender, email, subject, sent, parent, message, imagename, imagelink, thumblink, last_update) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', (message_id, group_id, sender.decode('UTF-8'), email.decode('UTF-8'), subject.decode('UTF-8'), sent, parent, message.decode('UTF-8'), image_name_original.decode('UTF-8'), image_name, thumb_name, last_update))
+      self.sqlite.execute('INSERT INTO articles(article_uid, group_id, sender, email, subject, sent, parent, message, imagename, imagelink, thumblink, last_update, public_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', (message_id, group_id, sender.decode('UTF-8'), email.decode('UTF-8'), subject.decode('UTF-8'), sent, parent, message.decode('UTF-8'), image_name_original.decode('UTF-8'), image_name, thumb_name, last_update, public_key))
       self.sqlite.execute('UPDATE groups SET last_update=?, article_count = (SELECT count(article_uid) FROM articles WHERE group_id = ?) WHERE group_id = ?', (int(time.time()), group_id, group_id))
     self.sqlite_conn.commit()
     return True
@@ -552,8 +599,8 @@ class main(threading.Thread):
     thread_counter = 0
     page_counter = 1
     threads = list()
-    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC', (group_id,)).fetchall():
-      root_message_id_hash = sha1(root_row[0]).hexdigest()[:10] # self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
+    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC', (group_id,)).fetchall():
+      root_message_id_hash = sha1(root_row[0]).hexdigest() # self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
       #if hash_result:
       #  root_message_id_hash = hash_result[0]
       #else:
@@ -561,7 +608,8 @@ class main(threading.Thread):
       #  continue
       if thread_counter == 10:
         self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name, page_counter), 2)
-        board_template = self.template_board.replace('%%threads%%', ''.join(threads))
+        board_template = self.template_board.replace('%%help%%', self.template_help)
+        board_template = board_template.replace('%%threads%%', ''.join(threads))
         pagelist = list()
         for page in xrange(1, pages + 1):
           if page != page_counter:
@@ -599,7 +647,19 @@ class main(threading.Thread):
       else:
         root_imagelink = self.no_file
         root_thumblink = self.no_file
-      rootTemplate = self.template_message_root.replace('%%articlehash%%', root_message_id_hash)
+      rootTemplate = self.template_message_root
+
+      if root_row[8]:
+        if root_row[8] != '':
+          rootTemplate = rootTemplate.replace('%%signed%%', self.template_signed)
+          rootTemplate = rootTemplate.replace('%%pubkey%%', root_row[8])
+          rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[8][:3] + root_row[8][-3:])
+        else:
+          rootTemplate = rootTemplate.replace('%%signed%%', '')
+      else:
+        rootTemplate = rootTemplate.replace('%%signed%%', '')
+      rootTemplate = rootTemplate.replace('%%articlehash%%', root_message_id_hash[:10])
+      rootTemplate = rootTemplate.replace('%%articlehash_full%%', root_message_id_hash)
       rootTemplate = rootTemplate.replace('%%author%%', root_row[1])
       rootTemplate = rootTemplate.replace('%%subject%%', root_row[2])
       rootTemplate = rootTemplate.replace('%%sent%%', datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M'))
@@ -613,7 +673,7 @@ class main(threading.Thread):
         missing = child_count - 4
       else:
         missing = 0
-      for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
+      for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
         #message_id_hash = sha1(child_row[0])hexdigest()[:10] #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (child_row[0],)).fetchone()
         #if hash_result:
         #  message_id_hash = hash_result[0]
@@ -632,7 +692,17 @@ class main(threading.Thread):
           childTemplate = childTemplate.replace('%%imagename%%', child_row[5])
         else:
           childTemplate = self.template_message_child_nopic
+        if child_row[8]:
+          if child_row[8] != '':
+            childTemplate = childTemplate.replace('%%signed%%', self.template_signed)
+            childTemplate = childTemplate.replace('%%pubkey%%', child_row[8])
+            childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
+          else:
+            childTemplate = childTemplate.replace('%%signed%%', '')
+        else:
+          childTemplate = childTemplate.replace('%%signed%%', '')
         childTemplate = childTemplate.replace('%%articlehash%%', sha1(child_row[0]).hexdigest()[:10])
+        childTemplate = childTemplate.replace('%%articlehash_full%%', sha1(child_row[0]).hexdigest())
         childTemplate = childTemplate.replace('%%author%%', child_row[1])
         childTemplate = childTemplate.replace('%%subject%%', child_row[2])
         childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
@@ -643,7 +713,7 @@ class main(threading.Thread):
           post = "post"
         else:
           post = "posts"
-        rootTemplate = rootTemplate.replace('%%message%%', root_row[4] + '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash, missing, post))
+        rootTemplate = rootTemplate.replace('%%message%%', root_row[4] + '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post))
       else:
         rootTemplate = rootTemplate.replace('%%message%%', root_row[4])
       threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
@@ -652,7 +722,9 @@ class main(threading.Thread):
       del childs
     if thread_counter > 0 or (page_counter == 1 and thread_counter == 0):
       self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name, page_counter), 2)
-      board_template = self.template_board.replace('%%threads%%', ''.join(threads))
+      board_template = self.template_board.replace('%%help%%', self.template_help)
+      # FIXME: put threads on the end
+      board_template = board_template.replace('%%threads%%', ''.join(threads))
       pagelist = list()
       for page in xrange(1, pages + 1):
         if page != page_counter:
@@ -678,7 +750,7 @@ class main(threading.Thread):
       del threads
 
   def generate_thread(self, root_uid):
-    root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, group_id FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()
+    root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, group_id, public_key FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()
     if not root_row:
       self.log('error: root post not yet available: {0}'.format(root_uid), 1)
       return
@@ -700,7 +772,18 @@ class main(threading.Thread):
     else:
       root_imagelink = self.no_file
       root_thumblink = self.no_file
-    rootTemplate = self.template_message_root.replace('%%articlehash%%', root_message_id_hash[:10])
+    rootTemplate = self.template_message_root
+    if root_row[9]:
+      if root_row[9] != '':
+        rootTemplate = rootTemplate.replace('%%signed%%', self.template_signed)
+        rootTemplate = rootTemplate.replace('%%pubkey%%', root_row[9])
+        rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[9][:3] + root_row[9][-3:])
+      else:
+        rootTemplate = rootTemplate.replace('%%signed%%', '')
+    else:
+      rootTemplate = rootTemplate.replace('%%signed%%', '')
+    rootTemplate = rootTemplate.replace('%%articlehash%%', root_message_id_hash[:10])
+    rootTemplate = rootTemplate.replace('%%articlehash_full%%', root_message_id_hash)
     rootTemplate = rootTemplate.replace('%%author%%', root_row[1])
     rootTemplate = rootTemplate.replace('%%subject%%', root_row[2])
     rootTemplate = rootTemplate.replace('%%sent%%', datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M'))
@@ -710,7 +793,7 @@ class main(threading.Thread):
     rootTemplate = rootTemplate.replace('%%message%%', root_row[4])
     childs = list()
     childs.append('')
-    for child_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink FROM articles WHERE parent = ? AND parent != article_uid ORDER BY sent ASC', (root_uid,)).fetchall():
+    for child_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid ORDER BY sent ASC', (root_uid,)).fetchall():
       #message_id_hash = sha1(child_row[0]).hexdigest()[:10]#self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (child_row[0],)).fetchone()
       #if hash_result:
       #  message_id_hash = hash_result[0]
@@ -729,12 +812,23 @@ class main(threading.Thread):
         childTemplate = childTemplate.replace('%%imagename%%', child_row[5])
       else:
         childTemplate = self.template_message_child_nopic
+      if child_row[8]:
+        if child_row[8] != '':
+          childTemplate = childTemplate.replace('%%signed%%', self.template_signed)
+          childTemplate = childTemplate.replace('%%pubkey%%', child_row[8])
+          childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
+        else:
+          childTemplate = childTemplate.replace('%%signed%%', '')
+      else:
+        childTemplate = childTemplate.replace('%%signed%%', '')
       childTemplate = childTemplate.replace('%%articlehash%%', sha1(child_row[0]).hexdigest()[:10])
+      childTemplate = childTemplate.replace('%%articlehash_full%%', sha1(child_row[0]).hexdigest())
       childTemplate = childTemplate.replace('%%author%%', child_row[1])
       childTemplate = childTemplate.replace('%%subject%%', child_row[2])
       childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
       childTemplate = childTemplate.replace('%%message%%', child_row[4])
       childs.append(childTemplate)
+
     threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
     threadsTemplate = threadsTemplate.replace('%%message_childs%%', ''.join(childs))
     boardlist = list()
@@ -743,7 +837,8 @@ class main(threading.Thread):
       if group_row[1] == root_row[8]:
         group_name = group_row[0]
     boardlist[-1] = boardlist[-1][:-1]
-    threadSingle = self.template_thread_single.replace('%%boardlist%%', ''.join(boardlist))
+    threadSingle = self.template_thread_single.replace('%%help%%', self.template_help)
+    threadSingle = threadSingle.replace('%%boardlist%%', ''.join(boardlist))
     threadSingle = threadSingle.replace('%%thread_id%%', root_message_id_hash)
     # FIXME group_name may contain " and thus allow html code injection, if encoded postman won't recognize so change must be at both sides
     threadSingle = threadSingle.replace('%%board%%', group_name)
