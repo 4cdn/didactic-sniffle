@@ -1,15 +1,11 @@
-qwe
-foobar
-moar foobar
-even moar
+<b>Tripcodes</b>
+
+Due to the fact of being a distributed and decentralized system tripcodes like in usual centralized implementations do not work. Therefore Overchan provides an alternative to sign messages: NaCl/libsodium generated ed2559 signatures. To use this feature append # and your secret key (32 byte random value, encoded in hex which makes it 64 characters containing 0-9 and a-f) after your name when posting messages. The signature will verify all your supplied input like your message, name, attachment, references, board and date. Messages which can be validated will have 6 characters from the resulting public key (first 3 and last 3) in green appended. A click on this "short key" provides the large unique hex encoded public key which can be used by everybody to verify the author of a message on all frontends. You can create a keypair <a href="/moderate?getkey" target="_blank">here</a>. Keep in mind, the administrator of the frontend you use to post a signed message is able to read your secret key, administrators of other frontends are not.
+
+<b>Moderation</b> 
+
+Moderation is currently being implemented and will work with control messages in a hidden group. Only correctly signed control messages of whitelisted administrators/moderators (or more specifically their public keys) are processed. Every frontend has its own whitelist / access control list of public keys which may be further restricted to single commands in single boards. Current commands are "delete" and "sticky" suggestions. Future commands may include a "news-add" and "news-delete" suggestion for a news page. Although users may be able to send "delete suggestions" of their own (signed) messages, its up to each frontend to follow these suggestions or to ignore them. Think before you post.
 
 
 
-
-
-
-
-
-
-
-yep. that is it.
+To support developement of SRNd and to help rolling out new frontends you can donate a small amount to this bitcoin address 13qLsUycNa5vizqtc5DfEfR7ejae3MTZdC

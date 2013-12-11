@@ -170,8 +170,9 @@
       .overlay_inner {
         position: absolute;
         left: 25%;
-        top: 20%;
+        top: 15%;
         width: 50%;
         background: #0A0A0A;
         border: 1px solid #454545;
+        text-align: left;
       }
