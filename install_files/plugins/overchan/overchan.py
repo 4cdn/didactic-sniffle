@@ -337,6 +337,15 @@ class main(threading.Thread):
 
   def basicHTMLencode(self, inputString):
     return inputString.replace('<', '&lt;').replace('>', '&gt;')
+  
+  def generate_pubkey_short_utf_8(self, full_pubkey_hex, length=6):
+    pub_short = ''
+    for x in range(0, length / 2):
+      pub_short +=  '&#%i;' % (9600 + int(full_pubkey_hex[x*2:x*2+2], 16))
+    length = length - (length / 2)
+    for x in range(0, length):
+      pub_short += '&#%i;' % (9600 + int(full_pubkey_hex[-(length*2):][x*2:x*2+2], 16))
+    return pub_short
 
   def parse_message(self, message_id, fd):
     if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (message_id,)).fetchone():
@@ -653,7 +662,9 @@ class main(threading.Thread):
         if root_row[8] != '':
           rootTemplate = rootTemplate.replace('%%signed%%', self.template_signed)
           rootTemplate = rootTemplate.replace('%%pubkey%%', root_row[8])
-          rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[8][:3] + root_row[8][-3:])
+          #TODO add startup_var to allow admin to configure format of short pubkey: UTF-8 or base 16
+          #rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[8][:3] + root_row[8][-3:])
+          rootTemplate = rootTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(root_row[8]))
         else:
           rootTemplate = rootTemplate.replace('%%signed%%', '')
       else:
@@ -696,7 +707,8 @@ class main(threading.Thread):
           if child_row[8] != '':
             childTemplate = childTemplate.replace('%%signed%%', self.template_signed)
             childTemplate = childTemplate.replace('%%pubkey%%', child_row[8])
-            childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
+            #childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
+            childTemplate = childTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(child_row[8]))
           else:
             childTemplate = childTemplate.replace('%%signed%%', '')
         else:
@@ -777,7 +789,8 @@ class main(threading.Thread):
       if root_row[9] != '':
         rootTemplate = rootTemplate.replace('%%signed%%', self.template_signed)
         rootTemplate = rootTemplate.replace('%%pubkey%%', root_row[9])
-        rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[9][:3] + root_row[9][-3:])
+        #rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[9][:3] + root_row[9][-3:])
+        rootTemplate = rootTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(root_row[9]))
       else:
         rootTemplate = rootTemplate.replace('%%signed%%', '')
     else:
@@ -816,7 +829,8 @@ class main(threading.Thread):
         if child_row[8] != '':
           childTemplate = childTemplate.replace('%%signed%%', self.template_signed)
           childTemplate = childTemplate.replace('%%pubkey%%', child_row[8])
-          childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
+          #childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
+          childTemplate = childTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(child_row[8]))
         else:
           childTemplate = childTemplate.replace('%%signed%%', '')
       else:
