@@ -108,6 +108,7 @@ class SRNd(threading.Thread):
         'incoming',
         os.path.join('incoming', 'tmp'),
         'articles',
+        os.path.join('articles', 'censored'),
         os.path.join('articles', 'invalid'),
         os.path.join('articles', 'duplicate'),
         'groups',
@@ -357,6 +358,7 @@ class SRNd(threading.Thread):
     print "[SRNd] importing plugins.."
     new_plugins = list()
     current_plugin = None
+    errors = False
     for plugin in os.listdir(os.path.join('config', 'hooks', 'plugins')):
       link = os.path.join('config', 'hooks', 'plugins', plugin)
       if os.path.isfile(link):
@@ -381,15 +383,21 @@ class SRNd(threading.Thread):
         f.close()
         #print "[SRNd] trying to import {0}..".format(name)
         try:
+          if 'SRNd' in args:
+            args['SRNd'] = self
           current_plugin = __import__(plugin)
           self.plugins[name] = current_plugin.main(name, args)
           new_plugins.append(name)
         except Exception as e:
+          errors = True
           print "[SRNd] error while importing {0}: {1}".format(name, e)
           if name in self.plugins:
             del self.plugins[name]
           continue
     del current_plugin
+    if errors:
+      print "[SRNd] could not start at least one plugin. Terminating."
+      exit(1)
     print "[SRNd] added {0} new plugins".format(len(new_plugins))
     # TODO: stop and remove plugins not listed at config/plugins anymore
 

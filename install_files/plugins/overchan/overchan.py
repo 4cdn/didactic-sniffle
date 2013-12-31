@@ -201,6 +201,9 @@ class main(threading.Thread):
     required_dirs.append(os.path.join(self.output_directory, 'thumbs'))
     required_dirs.append(self.database_directory)
     required_dirs.append(self.temp_directory)
+    required_dirs.append(os.path.join(self.temp_directory, "censored"))
+    required_dirs.append(os.path.join(self.temp_directory, "censored", "img"))
+    required_dirs.append(os.path.join(self.temp_directory, "censored", "thumbs"))
     for directory in required_dirs:
       if not os.path.exists(directory):
         os.mkdir(directory)
@@ -283,8 +286,98 @@ class main(threading.Thread):
   def shutdown(self):
     self.running = False
 
-  def add_article(self, message_id):
-    self.queue.put(message_id)
+  def add_article(self, message_id, source="article"):
+    self.queue.put((source, message_id))
+    
+  def handle_control(self, lines):
+    self.log("got control message: %s" % lines, 5)
+    root_posts = list()
+    for line in lines.split("\n"):
+      if line.lower().startswith("overchan-delete-attachment "):
+        message_id = line.lower().split(" ")[1]
+        row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
+        if not row:
+          self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 1)
+        else:
+          self.log("deleting attachments for message_id %s" % message_id, 2)
+          if row[3] not in self.regenerate_boards:
+            self.regenerate_boards.append(row[3])
+          if row[2] == '':
+            if not message_id in self.regenerate_threads:
+              self.regenerate_threads.append(message_id)
+          else:
+            if not row[2] in self.regenerate_threads:
+              self.regenerate_threads.append(row[2])
+          if len(row[0]) > 0 and row[0] != "invalid":
+            self.log("deleting attachment for message_id %s: img/%s" % (message_id, row[0]), 4)
+            try:
+              os.unlink(os.path.join(self.output_directory, "img", row[0]))
+            except Exception as e:
+              self.log("could not delete attachment %s: %s" % (row[0], e), 1)
+          if len(row[1]) > 0 and row[1] != "invalid":
+            self.log("deleting attachment for message_id %s: thumbs/%s" % (message_id, row[0]), 4)
+            try:
+              os.unlink(os.path.join(self.output_directory, "thumbs", row[1]))
+            except Exception as e:
+              self.log("could not delete attachment %s: %s" % (row[1], e), 1)
+          self.sqlite.execute('UPDATE articles SET imagelink = "invalid", thumblink = "invalid", imagename = "invalid", public_key = "" WHERE article_uid = ?', (message_id,))
+          self.sqlite_conn.commit()
+      elif line.lower().startswith("delete "):
+        message_id = line.lower().split(" ")[1]
+        row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
+        if not row:
+          self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 1)
+        else:
+          self.log("deleting message_id %s" % message_id, 2)
+          if row[3] not in self.regenerate_boards:
+            self.regenerate_boards.append(row[3])
+          if row[2] == '':
+            # root post
+            if int(self.sqlite.execute("SELECT count(article_uid) FROM articles WHERE parent = ?", (message_id,)).fetchone()[0]) > 0:
+              # root posts with child posts
+              self.log("deleting message_id %s, got a root post with attached child posts" % message_id, 4)
+              root_posts.append(message_id)
+              self.sqlite.execute('UPDATE articles SET imagelink = "invalid", thumblink = "invalid", imagename = "invalid", message = "this post has been deleted by some evil mod", sender = "deleted", email = "deleted", subject = "deleted", public_key = "" WHERE article_uid = ?', (message_id,))
+              if message_id not in self.regenerate_threads:
+                self.regenerate_threads.append(message_id)
+            else:
+              # root posts without child posts
+              self.log("deleting message_id %s, got a root post without any child posts" % message_id, 4)
+              self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
+              try:
+                os.unlink(os.path.join(self.output_directory, "thread-%s.html" % sha1(message_id).hexdigest()[:10]))
+              except Exception as e:
+                self.log("could not delete thread for message_id %s: %s" %(message_id, e), 1)
+          else:
+            # child post
+            self.log("deleting message_id %s, got a child post" % message_id, 4)
+            self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
+            if row[2] not in self.regenerate_threads:
+              self.regenerate_threads.append(row[2])
+          if len(row[0]) > 0 and row[0] != "invalid":
+            self.log("deleting message_id %s, has attachment %s" % (message_id, row[0]), 4)
+            try:
+              os.unlink(os.path.join(self.output_directory, "img", row[0]))
+            except Exception as e:
+              self.log("could not delete attachment %s: %s" % (row[0], e), 1)
+          if len(row[1]) > 0 and row[1] != "invalid":
+            self.log("deleting message_id %s, has thumb %s" % (message_id, row[0]), 4)
+            try:
+              os.unlink(os.path.join(self.output_directory, "thumbs", row[1]))
+            except Exception as e:
+              self.log("could not delete attachment %s: %s" % (row[1], e), 1)
+          self.sqlite_conn.commit()
+    for post in root_posts:
+      if int(self.sqlite.execute("SELECT count(article_uid) FROM articles WHERE parent = ? and parent != article_uid", (message_id,)).fetchone()[0]) == 0:
+        self.log("deleting message_id %s, root_post has no more childs" % message_id, 2)
+        self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
+        self.sqlite_conn.commit()
+        try:
+          os.unlink(os.path.join(self.output_directory, "thread-%s" % sha1(message_id).hexdigest()[:10]))
+        except Exception as e:
+          self.log("could not delete thread for message_id %s: %s" % (message_id, e), 1)
+      else:
+        self.log("deleting message_id %s, root_post still has childs" % message_id, 3)
 
   def log(self, message, debuglevel):
     if self.debug >= debuglevel:
@@ -318,10 +411,19 @@ class main(threading.Thread):
     self.running = True
     while self.running:
       try:
-        message_id = self.queue.get(block=True, timeout=1)
-        f = open(os.path.join('articles', message_id), 'r')
-        if not self.parse_message(message_id, f):
-          f.close()
+        ret = self.queue.get(block=True, timeout=1)
+        if ret[0] == "article":
+          message_id = ret[1]
+          #message_id = self.queue.get(block=True, timeout=1)
+          self.log("got article %s" % message_id, 5)
+          f = open(os.path.join('articles', message_id), 'r')
+          if not self.parse_message(message_id, f):
+            f.close()
+            self.log("got article %s, parse_message failed. somehow." % message_id, 5)
+        elif ret[0] == "control":
+          self.handle_control(ret[1])
+        else:
+          self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
       except Queue.Empty as e:
         if len(self.regenerate_boards) > 0:
           for board in self.regenerate_boards:

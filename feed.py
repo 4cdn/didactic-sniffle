@@ -241,14 +241,17 @@ class feed(threading.Thread):
             self.state = 'outfeed_send_article_stream'
             for message_id in self.articles_to_send:
               if self.con_broken: break
-              self.send('TAKETHIS {0}\r\n'.format(message_id))
-              self.send_article(message_id)
+              if os.path.exists(os.path.join('articles', message_id)):
+                self.send('TAKETHIS {0}\r\n'.format(message_id))
+                self.send_article(message_id)
             if not self.con_broken: del self.articles_to_send[:]
             self.state = 'outfeed_send_check_stream'
             count = 0
             while self.queue.qsize() > 0 and count <= 50 and not self.con_broken:
+              # FIXME why self.message_id here? IHAVE and POST makes sense, but streaming?
               self.message_id = self.queue.get()
-              self.send('CHECK {0}\r\n'.format(self.message_id))
+              if os.path.exists(os.path.join('articles', self.message_id)):
+                self.send('CHECK {0}\r\n'.format(self.message_id))
               count += 1
             self.state = 'idle'
           elif self.queue.qsize() > 0 and not self.con_broken:
@@ -427,11 +430,14 @@ class feed(threading.Thread):
       self.state = 'closing down'
       self.socket.shutdown(socket.SHUT_RDWR)
     elif commands[0] == 'CHECK' and len(commands) == 2:
-      #TODO blacklisted => 438
       #TODO 431 message-id   Transfer not possible; try again later
       message_id = line.split(' ', 1)[1]
       if os.path.exists(os.path.join('articles', message_id)):
         self.send('438 {0} i know this article already\r\n'.format(message_id))
+        return
+      if os.path.exists(os.path.join('articles', 'censored', message_id)):
+        self.send('438 {0} article is blacklisted\r\n'.format(message_id))
+        #print "[%s] CHECK article blacklisted: %s" % (self.name, message_id)
         return
       self.send('238 {0} go ahead, send to the article\r\n'.format(message_id))
     elif commands[0] == 'TAKETHIS' and len(commands) == 2:
@@ -450,6 +456,10 @@ class feed(threading.Thread):
       #if self.sqlite.execute('SELECT message_id FROM articles WHERE message_id = ?', (arg,)).fetchone():
       if os.path.exists(os.path.join('articles', arg)):
         self.send('435 already have this article\r\n')
+        return
+      if os.path.exists(os.path.join('articles', 'censored', arg)):
+        self.send('435 article is blacklisted\r\n')
+        #print "[%s] IHAVE article blacklisted: %s" % (self.name, arg)
         return
       #TODO: add currently receiving same message_id from another feed == 436, try again later
       self.send('335 go ahead, send to the article\r\n'.format(arg))
@@ -567,18 +577,19 @@ class feed(threading.Thread):
       elif self.variant == 'TAKETHIS':
         self.send('239 {0} article received\r\n'.format(self.message_id_takethis))
         self.message_id_takethis = ''
-      path = os.path.join('incoming', 'tmp', filename)
-      f = open(path, 'w')
-      if new_message_id:
-        f.write('Message-ID: {0}\n'.format(message_id))
-      f.write(''.join(lines))
-      f.close()
-      target = os.path.join('incoming', message_id)
-      if not os.path.exists(target):
-        os.rename(path, target)
-      else:
-        if self.debug > 0: print '[{0}] got duplicate article: {1} does already exist. removing temporary file.'.format(self.name, target)
-        os.remove(path)
+      if not os.path.exists(os.path.join('articles', 'censored', message_id)):
+        path = os.path.join('incoming', 'tmp', filename)
+        f = open(path, 'w')
+        if new_message_id:
+          f.write('Message-ID: {0}\n'.format(message_id))
+        f.write(''.join(lines))
+        f.close()
+        target = os.path.join('incoming', message_id)
+        if not os.path.exists(target):
+          os.rename(path, target)
+        else:
+          if self.debug > 0: print '[{0}] got duplicate article: {1} does already exist. removing temporary file.'.format(self.name, target)
+          os.remove(path)
       self.waitfor = ''
       self.variant = ''
     else:

@@ -134,6 +134,7 @@
       .sig_chk {
         position: absolute;
         opacity: 0;
+        z-index: -1;
       }
       .sig_key {
         padding-left: 5px;
