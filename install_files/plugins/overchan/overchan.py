@@ -15,6 +15,7 @@ import Image
 import codecs
 import nacl.signing
 from binascii import unhexlify
+import re
 if __name__ == '__main__':
   import signal
   import fcntl
@@ -131,6 +132,9 @@ class main(threading.Thread):
     f = open(os.path.join(self.template_directory, 'help.tmpl'))
     self.template_help = f.read()
     f.close()
+    
+    self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
+    self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
 
     if __name__ == '__main__':
       i = open(os.path.join(self.template_directory, self.css_file), 'r')
@@ -201,9 +205,9 @@ class main(threading.Thread):
     required_dirs.append(os.path.join(self.output_directory, 'thumbs'))
     required_dirs.append(self.database_directory)
     required_dirs.append(self.temp_directory)
-    required_dirs.append(os.path.join(self.temp_directory, "censored"))
-    required_dirs.append(os.path.join(self.temp_directory, "censored", "img"))
-    required_dirs.append(os.path.join(self.temp_directory, "censored", "thumbs"))
+    #required_dirs.append(os.path.join(self.temp_directory, "censored"))
+    #required_dirs.append(os.path.join(self.temp_directory, "censored", "img"))
+    #required_dirs.append(os.path.join(self.temp_directory, "censored", "thumbs"))
     for directory in required_dirs:
       if not os.path.exists(directory):
         os.mkdir(directory)
@@ -261,6 +265,8 @@ class main(threading.Thread):
     self.regenerate_boards = list()
     self.regenerate_threads = list()
     self.missing_parents = dict()
+    self.sqlite_hasher_conn = sqlite3.connect('hashes.db3')
+    self.db_hasher = self.sqlite_hasher_conn.cursor() 
     self.sqlite_conn = sqlite3.connect(os.path.join(self.database_directory, 'overchan.db3'))
     self.sqlite = self.sqlite_conn.cursor()
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS groups
@@ -434,7 +440,7 @@ class main(threading.Thread):
             self.generate_thread(thread)
           self.regenerate_threads = list()
     self.sqlite_conn.close()
-    #self.sqlite_hashes_conn.close()
+    self.sqlite_hasher_conn.close()
     self.log('bye', 2)
 
   def basicHTMLencode(self, inputString):
@@ -448,6 +454,31 @@ class main(threading.Thread):
     for x in range(0, length):
       pub_short += '&#%i;' % (9600 + int(full_pubkey_hex[-(length*2):][x*2:x*2+2], 16))
     return pub_short
+
+  def linkit(self, rematch):
+    row = self.db_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash like ?", (rematch.group(2) + "%",)).fetchall()
+    if not row:
+      # hash not found
+      return rematch.group(0)
+    if len(row) > 1:
+      # multiple matches for that 10 char hash
+      return rematch.group(0)
+    message_id = row[0][0]
+    #print "got message_id:", message_id
+    parent_row = self.sqlite.execute("SELECT parent FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
+    if not parent_row:
+      # not an overchan article (anymore)
+      return rematch.group(0)
+    parent_id = parent_row[0]
+    if parent_id == "":
+      # article is root post
+      return '%s<a href="thread-%s.html">%s</a>' % (rematch.group(1), rematch.group(2), rematch.group(2))
+    # article has a parent
+    parent = sha1(parent_id).hexdigest()[:10]
+    return '%s<a href="thread-%s.html#%s">%s</a>' % (rematch.group(1), parent, rematch.group(2), rematch.group(2))
+  
+  def quoteit(self, rematch):
+    return '<span class="quote">%s</span>' % rematch.group(0).rstrip("\r")
 
   def parse_message(self, message_id, fd):
     if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (message_id,)).fetchone():
@@ -820,16 +851,20 @@ class main(threading.Thread):
         childTemplate = childTemplate.replace('%%author%%', child_row[1])
         childTemplate = childTemplate.replace('%%subject%%', child_row[2])
         childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
-        childTemplate = childTemplate.replace('%%message%%', child_row[4])
+        message = self.linker.sub(self.linkit, child_row[4])
+        message = self.quoter.sub(self.quoteit, message)
+        childTemplate = childTemplate.replace('%%message%%', message)
         childs.append(childTemplate)
+      message = self.linker.sub(self.linkit, root_row[4])
+      message = self.quoter.sub(self.quoteit, message)
       if missing > 0:
         if missing == 1:
           post = "post"
         else:
           post = "posts"
-        rootTemplate = rootTemplate.replace('%%message%%', root_row[4] + '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post))
+        rootTemplate = rootTemplate.replace('%%message%%', message + '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post))
       else:
-        rootTemplate = rootTemplate.replace('%%message%%', root_row[4])
+        rootTemplate = rootTemplate.replace('%%message%%', message)
       threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
       threadsTemplate = threadsTemplate.replace('%%message_childs%%', ''.join(childs))
       threads.append(threadsTemplate)
@@ -905,7 +940,9 @@ class main(threading.Thread):
     rootTemplate = rootTemplate.replace('%%imagelink%%', root_imagelink)
     rootTemplate = rootTemplate.replace('%%thumblink%%', root_thumblink)
     rootTemplate = rootTemplate.replace('%%imagename%%', root_row[5])
-    rootTemplate = rootTemplate.replace('%%message%%', root_row[4])
+    message = self.linker.sub(self.linkit, root_row[4])
+    message = self.quoter.sub(self.quoteit, message)
+    rootTemplate = rootTemplate.replace('%%message%%', message)
     childs = list()
     childs.append('')
     for child_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid ORDER BY sent ASC', (root_uid,)).fetchall():
@@ -942,7 +979,9 @@ class main(threading.Thread):
       childTemplate = childTemplate.replace('%%author%%', child_row[1])
       childTemplate = childTemplate.replace('%%subject%%', child_row[2])
       childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
-      childTemplate = childTemplate.replace('%%message%%', child_row[4])
+      message = self.linker.sub(self.linkit, child_row[4])
+      message = self.quoter.sub(self.quoteit, message)
+      childTemplate = childTemplate.replace('%%message%%', message)
       childs.append(childTemplate)
 
     threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
