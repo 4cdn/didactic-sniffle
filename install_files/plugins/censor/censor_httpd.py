@@ -93,6 +93,8 @@ class censor(BaseHTTPRequestHandler):
       if path.startswith('/modify?'):
         key = path[8:]
         self.send_modify_key(key)
+      elif path.startswith('/piclog'):
+        self.send_piclog()
       elif path == "/foo":
         self.die("GET bar")
       else:
@@ -279,6 +281,24 @@ class censor(BaseHTTPRequestHandler):
       cur_template = cur_template.replace("%%count%%", str(count[0]))
       table.append(cur_template)
     out = out.replace("%%mod_unknown%%", "\n".join(table))
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write(out)
+    
+  def send_piclog(self, page=0):
+    table = list()
+    for row in self.origin.sqlite_overchan.execute('SELECT thumblink, parent, article_uid, last_update FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC').fetchall():
+      cur_template = '<a href="%%target%%" target="_blank"><img src="%%thumblink%%" class="image" /></a>'
+      if row[1] == '' or row[1] == row[2]:
+        target = '/thread-%s.html' % sha1(row[2]).hexdigest()[:10]
+      else:
+        target = '/thread-%s.html#%s' % (sha1(row[1]).hexdigest()[:10], sha1(row[2]).hexdigest()[:10])
+      cur_template = cur_template.replace("%%target%%", target)
+      cur_template = cur_template.replace("%%thumblink%%", '/thumbs/' + row[0])
+      table.append(cur_template)
+    out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"></head><body>%%content%%</body></html>'
+    out = out.replace("%%content%%", "\n".join(table))
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
@@ -525,10 +545,14 @@ class censor_httpd(threading.Thread):
     self.httpd.sqlite_hasher = self.httpd.sqlite_hasher_conn.cursor()
     self.httpd.sqlite_censor_conn = sqlite3.connect('censor.db3')
     self.httpd.sqlite_censor = self.httpd.sqlite_censor_conn.cursor()
+    # FIXME get overchan db path via arg
+    self.httpd.sqlite_overchan_conn = sqlite3.connect('plugins/overchan/overchan.db3')
+    self.httpd.sqlite_overchan = self.httpd.sqlite_overchan_conn.cursor()
     self.log('start listening at http://{0}:{1}'.format(self.ip, self.port), 1)
     self.httpd.serve_forever()
     self.httpd.sqlite_hasher_conn.close()
     self.httpd.sqlite_censor_conn.close()
+    self.httpd.sqlite_overchan_conn.close()
     self.httpd.rnd.close()
     self.log('bye', 2)
 
