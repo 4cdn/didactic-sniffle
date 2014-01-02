@@ -8,7 +8,7 @@ from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from urllib import unquote
 from cgi import FieldStorage
 import base64
-from hashlib import sha1, sha512
+from hashlib import sha1, sha256, sha512
 from binascii import hexlify
 from datetime import datetime
 import os
@@ -139,14 +139,35 @@ class postman(BaseHTTPRequestHandler):
       if post_vars['name'].value != '':
         name = post_vars['name'].value
         signature = False
-        if '#' in name and len(name) >= 65:
-          if name[-65] == '#':
+        if '#' in name:
+          if len(name) >= 65 and name[-65] == '#':
             try:
               keypair = nacl.signing.SigningKey(name[-64:], encoder=nacl.encoding.HexEncoder)
               signature = True
-            except Execption as e:
+            except Exception as e:
               self.origin.log("can't create keypair: %s" % e, 2)
             name = name[:-65]
+          else:
+            parts = name.split('#', 1)
+            if len(parts[1]) > 0:
+              name = parts[0]
+              try:
+                private = parts[1][:32]
+                out = list()
+                counter = 0
+                for char in private:
+                  out.append(chr(ord(self.origin.seed[counter]) ^ ord(char)))
+                  counter += 1
+                for x in range(counter, 32):
+                  out.append(self.origin.seed[x])
+                del counter
+                keypair = nacl.signing.SigningKey(sha256("".join(out)).digest())
+                del out
+                signature = True
+              except Exception as e:
+                self.origin.log("can't create keypair: %s" % e, 2)
+            del parts
+              
     if 'email' in post_vars:
       #FIXME add email validation: .+@.+\..+
       if post_vars['email'].value != '':
@@ -283,6 +304,18 @@ class main(threading.Thread):
 
     self.log('initializing httpserver..', 3)
     self.httpd = HTTPServer((self.ip, self.port), postman)
+    if os.path.exists('seed'):
+      f = open('seed', 'r')
+      self.httpd.seed = f.read()
+      f.close()
+    else:
+      f = open('/dev/urandom', 'r')
+      self.httpd.seed = f.read(32)
+      f.close()
+      f = open('seed', 'w')
+      f.write(self.httpd.seed)
+      f.close()
+      os.chmod('seed', 0o600)
 
     if 'reject_debug' in args:
       tmp = args['reject_debug']
