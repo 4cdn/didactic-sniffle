@@ -32,22 +32,25 @@ class main(threading.Thread):
     # FIXME read debuglevel here
 
     error = ''
-    for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file'):
+    for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title'):
       if not arg in args:
-        error += "  {0} not in arguments\n".format(arg)
+        error += "%s not in arguments\n" % arg
     if error != '':
-      self.log('error:', 0)
-      self.log(error[:-1], 0)
+      error = error.rstrip("\n")
+      for line in error.split("\n"):
+        self.log('error: %s' % line, 0)
       self.log('terminating', 0)
       self.should_terminate = True
       if __name__ == '__main__':
         exit(1)
       else:
+        raise Exception(error)
         return
     self.output_directory = args['output_directory']
     self.database_directory = args['database_directory']
     self.template_directory = args['template_directory']
     self.temp_directory = args['temp_directory']
+    self.html_title = args['title']
     if not os.path.exists(self.template_directory):
       self.log("error: template directory '{0}' does not exist".format(self.template_directory), 0)
       self.log("terminating", 0)
@@ -205,9 +208,6 @@ class main(threading.Thread):
     required_dirs.append(os.path.join(self.output_directory, 'thumbs'))
     required_dirs.append(self.database_directory)
     required_dirs.append(self.temp_directory)
-    #required_dirs.append(os.path.join(self.temp_directory, "censored"))
-    #required_dirs.append(os.path.join(self.temp_directory, "censored", "img"))
-    #required_dirs.append(os.path.join(self.temp_directory, "censored", "thumbs"))
     for directory in required_dirs:
       if not os.path.exists(directory):
         os.mkdir(directory)
@@ -751,6 +751,7 @@ class main(threading.Thread):
       if thread_counter == 10:
         self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name, page_counter), 2)
         board_template = self.template_board.replace('%%help%%', self.template_help)
+        board_template = board_template.replace('%%title%%', self.html_title)
         board_template = board_template.replace('%%threads%%', ''.join(threads))
         pagelist = list()
         for page in xrange(1, pages + 1):
@@ -873,6 +874,7 @@ class main(threading.Thread):
       self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name, page_counter), 2)
       board_template = self.template_board.replace('%%help%%', self.template_help)
       # FIXME: put threads on the end
+      board_template = board_template.replace('%%title%%', self.html_title)
       board_template = board_template.replace('%%threads%%', ''.join(threads))
       pagelist = list()
       for page in xrange(1, pages + 1):
@@ -993,6 +995,7 @@ class main(threading.Thread):
         group_name = group_row[0]
     boardlist[-1] = boardlist[-1][:-1]
     threadSingle = self.template_thread_single.replace('%%help%%', self.template_help)
+    threadSingle = threadSingle.replace('%%title%%', self.html_title)
     threadSingle = threadSingle.replace('%%boardlist%%', ''.join(boardlist))
     threadSingle = threadSingle.replace('%%thread_id%%', root_message_id_hash)
     # FIXME group_name may contain " and thus allow html code injection, if encoded postman won't recognize so change must be at both sides

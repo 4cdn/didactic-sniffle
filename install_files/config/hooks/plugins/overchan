@@ -14,7 +14,8 @@
 #start_param invalid_file=invalid.png
 #start_param no_file=nope.png
 #start_param document_file=document.png
-#start_param css_file=master.css
+#start_param css_file=krane.css
 #start_param debug=2
+#start_param title=overchan.i.did.not.read.the.config
 
 overchan.*
