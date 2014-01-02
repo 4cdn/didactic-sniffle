@@ -39,7 +39,7 @@ class censor(BaseHTTPRequestHandler):
       public = self.check_login() 
       if public:
         session = hexlify(self.origin.rnd.read(24))
-        self.origin.sessions[session] = (int(time.time()) + 3600, public)
+        self.origin.sessions[session] = [int(time.time()) + 3600, public]
         self.send_redirect('/moderate/%s/' % session, 'access granted. this time.')
       else:
         self.send_login("totally not")
@@ -51,6 +51,7 @@ class censor(BaseHTTPRequestHandler):
       if self.origin.sessions[self.path[10:58]][0] < int(time.time()):
         self.send_login()
         return
+      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600
       path = self.path[58:]
       if path.startswith('/modify?'):
         key = path[8:]
@@ -89,6 +90,7 @@ class censor(BaseHTTPRequestHandler):
       if self.origin.sessions[self.path[10:58]][0] < int(time.time()):
         self.send_login()
         return
+      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600
       path = self.path[58:]
       if path.startswith('/modify?'):
         key = path[8:]
