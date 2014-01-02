@@ -28,19 +28,26 @@ class main(threading.Thread):
     self.name = thread_name
     self.should_terminate = False
     self.debug = 5
-    for arg in ('template_directory', 'output_directory', 'database_directory', 'css_file'):
+    error = ''
+    for arg in ('template_directory', 'output_directory', 'database_directory', 'css_file', 'title'):
       if not arg in args:
-        self.log('error: {0} not in arguments'.format(arg), 0)
-        self.log('terminating', 0)
-        self.should_terminate = True
-        if __name__ == '__main__':
-          exit(1)
-        else:
-          return
+        error += '%s not in arguments\n' % arg
+    if error != '':
+      error = error.rstrip("\n")
+      for line in error.split("\n"):
+        self.log('error: %s' % line, 0)
+      self.log('terminating', 0)
+      self.should_terminate = True
+      if __name__ == '__main__':
+        exit(1)
+      else:
+        raise Exception(error)
+        return
     self.outputDirectory = args['output_directory']
     self.database_directory = args['database_directory']
     self.templateDirectory = args['template_directory']
     self.css_file = args['css_file']
+    self.html_title = args['title']
     if not os.path.exists(self.templateDirectory):
       self.log("error: template directory '{0}' does not exist".format(self.templateDirectory), 0)
       self.log("terminating", 0)
@@ -106,6 +113,13 @@ class main(threading.Thread):
       except ValueError as e:
         self.debug = 2
         self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+    if 'generate_all' in args:
+      if args['generate_all'].lower() == 'true': 
+        self.generate_full_html_on_start = True
+      else:
+        self.generate_full_html_on_start = False
+    else:
+      self.generate_full_html_on_start = False
     self.formatter = HtmlFormatter(linenos=True, cssclass="source", encoding='utf-8', anchorlinenos=True, lineanchors='line', full=False, cssfile="./styles.css", noclobber_cssfile=True)
     self.lexers = dict()
     #allowed_lexers = ('Bash', 'HTML+Lasso', 'NumPy')
@@ -160,8 +174,6 @@ class main(threading.Thread):
     self.running = True
     self.regenerate_index = False
     self.log("starting up as plugin..", 2)
-    # TODO create startup var for generate_full_html_on_start
-    self.generate_full_html_on_start = True
     if self.generate_full_html_on_start:
       self.log("regenerating all HTML files..", 2)
       for row in self.sqlite.execute('SELECT hash, sender, subject, sent, body FROM pastes ORDER BY sent ASC').fetchall():
@@ -226,7 +238,8 @@ class main(threading.Thread):
       self.log("{0}: {1}".format(subject, e), 0)
       lexer = get_lexer_by_name('text', encoding='utf-8')
     result = highlight(paste_content, lexer, self.formatter).decode('utf-8')
-    template = self.template_single_paste.replace('%%title%%', subject)
+    template = self.template_single_paste.replace('%%paste_title%%', subject)
+    template = template.replace('%%title%%', self.html_title)
     template = template.replace('%%sender%%', sender)
     template = template.replace('%%sent%%', datetime.utcfromtimestamp(sent).strftime('%Y/%m/%d %H:%M UTC'))
     template = template.replace('%%identifier%%', identifier)
@@ -280,7 +293,8 @@ class main(threading.Thread):
     for row in self.sqlite.execute('SELECT hash, subject, sender, sent FROM pastes ORDER by sent DESC').fetchall():
       paste_recent.append('<tr><td><a href="{0}.html">{1}</a></td><td>{2}</td><td>{3}</td></tr>\n'.format(row[0][:10], row[1].encode('UTF-8'), row[2].encode('UTF-8'), datetime.utcfromtimestamp(row[3]).strftime('%Y/%m/%d %H:%M UTC')))
     f = open(os.path.join(self.outputDirectory, 'index.html'), 'w')
-    template = self.template_index.replace('%%reply%%', '')
+    template = self.template_index.replace("%%title%%", self.html_title)
+    template = template.replace('%%reply%%', '')
     template = template.replace('%%target%%', '')
     template = template.replace('%%pasterows%%', ''.join(paste_recent))
     f.write(template)
