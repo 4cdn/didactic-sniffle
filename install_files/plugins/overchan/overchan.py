@@ -28,8 +28,6 @@ class main(threading.Thread):
     threading.Thread.__init__(self)
     self.name = thread_name
     self.should_terminate = False
-    self.debug = 5
-    # FIXME read debuglevel here
 
     error = ''
     for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title'):
@@ -63,6 +61,16 @@ class main(threading.Thread):
     self.invalid_file = args['invalid_file']
     self.document_file = args['document_file']
     self.css_file = args['css_file']
+    self.debug = 2
+    if 'debug' in args:
+      try:
+        self.debug = int(args['debug'])
+        if self.debug < 0 or self.debug > 5:
+          self.debug = 2
+          self.log("invalid value for debug, using default debug level of 2", 2)
+      except:
+        self.debug = 2
+        self.log("invalid value for debug, using default debug level of 2", 2)
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.log("replacement for root posts without picture not found: {0}".format(os.path.join(self.template_directory, self.no_file)), 0)
@@ -547,8 +555,8 @@ class main(threading.Thread):
       return False
     if signature:
       if public_key != '':
-        self.log("got signature with length %i and content '%s'" %(len(signature), signature), 3)
-        self.log("got public_key with length %i and content '%s'" %(len(public_key), public_key), 3)
+        self.log("got signature with length %i and content '%s'" % (len(signature), signature), 3)
+        self.log("got public_key with length %i and content '%s'" % (len(public_key), public_key), 3)
         if not (len(signature) == 128 and len(public_key) == 64):
           public_key = ''
     group_ids = list()
