@@ -167,6 +167,8 @@ class postman(BaseHTTPRequestHandler):
               except Exception as e:
                 self.origin.log("can't create keypair: %s" % e, 2)
             del parts
+      if name == '':
+        name = self.origin.frontends[frontend]['defaults']['name']
               
     if 'email' in post_vars:
       #FIXME add email validation: .+@.+\..+
