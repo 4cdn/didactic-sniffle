@@ -249,6 +249,8 @@ class main(threading.Thread):
           self.SRNd.plugins[name].add_article(hooks[hook], "control")
         else:
           self.log("unknown plugin detected. wtf? %s" % name, 0)
+      elif hook.startswith('outfeeds-'):
+        continue
       else:
         self.log("unknown hook detected. wtf? %s" % hook, 0)
         

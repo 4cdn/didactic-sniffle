@@ -17,5 +17,6 @@
 #start_param debug=2
 #start_param title=paste.i.did.not.read.the.config
 #start_param generate_all=False
+#start_param sync_on_startup=True
 
 ano.paste

@@ -17,5 +17,6 @@
 #start_param css_file=krane.css
 #start_param debug=2
 #start_param title=overchan.i.did.not.read.the.config
+#start_param sync_on_startup=True
 
 overchan.*
