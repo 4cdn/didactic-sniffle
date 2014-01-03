@@ -39,7 +39,7 @@ class censor(BaseHTTPRequestHandler):
       public = self.check_login() 
       if public:
         session = hexlify(self.origin.rnd.read(24))
-        self.origin.sessions[session] = [int(time.time()) + 3600, public]
+        self.origin.sessions[session] = [int(time.time()) + 3600 * 6, public]
         self.send_redirect('/moderate/%s/' % session, 'access granted. this time.')
       else:
         self.send_login("totally not")
@@ -51,7 +51,7 @@ class censor(BaseHTTPRequestHandler):
       if self.origin.sessions[self.path[10:58]][0] < int(time.time()):
         self.send_login()
         return
-      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600
+      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600 * 6
       path = self.path[58:]
       if path.startswith('/modify?'):
         key = path[8:]
@@ -62,9 +62,9 @@ class censor(BaseHTTPRequestHandler):
           return
         try:
           self.handle_update_key(key)
-          self.send_redirect(self.path[:58] + "/", "update ok,<br />redirecting you in a moment.", 2)
+          self.send_redirect(self.path[:58] + "/", "update ok<br />redirecting you in a moment.", 4)
         except Exception as e:
-          self.send_redirect(self.path[:58] + "/", "update failed: %s,<br />redirecting you in a moment." % e, 10)
+          self.send_redirect(self.path[:58] + "/", "update failed: %s<br />redirecting you in a moment." % e, 10)
       elif path == "/foo":
         self.die("POST bar")
       else:
@@ -90,13 +90,15 @@ class censor(BaseHTTPRequestHandler):
       if self.origin.sessions[self.path[10:58]][0] < int(time.time()):
         self.send_login()
         return
-      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600
+      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600 * 6
       path = self.path[58:]
       if path.startswith('/modify?'):
         key = path[8:]
         self.send_modify_key(key)
-      elif path.startswith('/piclog'):
+      elif path.startswith('/pic_log') or path.startswith("/piclog"):
         self.send_piclog()
+      elif path.startswith('/message_log') or path.startswith('/messagelog'):
+        self.send_messagelog()
       elif path == "/foo":
         self.die("GET bar")
       else:
@@ -218,8 +220,9 @@ class censor(BaseHTTPRequestHandler):
 
   def send_log(self):
     out = self.origin.template_log
+    out = out.replace('%%navigation%%', '&nbsp;'.join(self.__get_navigation('moderation_log')))
     table = list()    
-    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment FROM log, commands, keys, reasons WHERE log.accepted = 1 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
+    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 1 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
       cur_template = self.origin.template_log_accepted
       if row[1] != "":
         cur_template = cur_template.replace("%%key_or_nick%%", row[1])
@@ -231,10 +234,11 @@ class censor(BaseHTTPRequestHandler):
       # TODO save parent in censor.db?
       cur_template = cur_template.replace("%%postid%%", row[3].replace("<", "&lt;").replace(">", "&gt;"))
       cur_template = cur_template.replace("%%reason%%", row[4])
+      cur_template = cur_template.replace("%%date%%", datetime.utcfromtimestamp(row[6]).strftime('%Y/%m/%d %H:%M'))
       table.append(cur_template)
     out = out.replace("%%mod_accepted%%", "\n".join(table))
     del table[:]    
-    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment FROM log, commands, keys, reasons WHERE log.accepted = 0 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
+    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 0 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
       cur_template = self.origin.template_log_ignored
       if row[1] != "":
         cur_template = cur_template.replace("%%key_or_nick%%", row[1])
@@ -244,6 +248,7 @@ class censor(BaseHTTPRequestHandler):
       cur_template = cur_template.replace("%%action%%", row[2])
       cur_template = cur_template.replace("%%postid%%", row[3].replace("<", "&lt;").replace(">", "&gt;"))
       cur_template = cur_template.replace("%%reason%%", row[4])
+      cur_template = cur_template.replace("%%date%%", datetime.utcfromtimestamp(row[6]).strftime('%Y/%m/%d %H:%M'))
       table.append(cur_template)
     out = out.replace("%%mod_ignored%%", "\n".join(table))
     del table[:]
@@ -289,28 +294,60 @@ class censor(BaseHTTPRequestHandler):
     self.wfile.write(out)
     
   def send_piclog(self, page=0):
-    table = list()
-    for row in self.origin.sqlite_overchan.execute('SELECT thumblink, parent, article_uid, last_update FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC').fetchall():
-      cur_template = '<a href="%%target%%" target="_blank"><img src="%%thumblink%%" class="image" /></a>'
-      if row[1] == '' or row[1] == row[2]:
-        target = '/thread-%s.html' % sha1(row[2]).hexdigest()[:10]
-      else:
-        target = '/thread-%s.html#%s' % (sha1(row[1]).hexdigest()[:10], sha1(row[2]).hexdigest()[:10])
-      cur_template = cur_template.replace("%%target%%", target)
-      cur_template = cur_template.replace("%%thumblink%%", '/thumbs/' + row[0])
-      table.append(cur_template)
-    out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"></head><body>%%content%%</body></html>'
-    out = out.replace("%%content%%", "\n".join(table))
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
+    out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"></head><body style="margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt;">%%navigation%%'
+    out = out.replace("%%navigation%%", "&nbsp;".join(self.__get_navigation('pic_log')))
     self.wfile.write(out)
+    for row in self.origin.sqlite_overchan.execute('SELECT * FROM (SELECT thumblink, parent, article_uid, last_update, sent FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC) ORDER by sent DESC').fetchall():
+      cur_template = '<a href="/%%target%%" target="_blank"><img src="%%thumblink%%" class="image" style="height: 200px;" /></a>\n'
+      if row[1] == '' or row[1] == row[2]:
+        target = 'thread-%s.html' % sha1(row[2]).hexdigest()[:10]
+      else:
+        target = 'thread-%s.html#%s' % (sha1(row[1]).hexdigest()[:10], sha1(row[2]).hexdigest()[:10])
+      cur_template = cur_template.replace("%%target%%", target)
+      cur_template = cur_template.replace("%%thumblink%%", '/thumbs/' + row[0])
+      self.wfile.write(cur_template)    
+    self.wfile.write('</body></html>')
     
+  def send_messagelog(self, page=0):
+    table = list()
+    out = u'<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">table { font-size: 9pt;} td { vertical-align: top; } .dontwrap { white-space: nowrap; }</style></head><body style="margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt;">%%navigation%%%%content%%</body></html>'
+    out = out.replace("%%navigation%%", "&nbsp;".join(self.__get_navigation('message_log'))) 
+    #for row in self.origin.sqlite_overchan.execute('SELECT article_uid, parent, sender, subject, message, parent, public_key, sent, group_name FROM articles, groups WHERE groups.group_id = articles.group_id ORDER BY articles.sent DESC LIMIT ?,50', (50*page,)).fetchall():
+    for row in self.origin.sqlite_overchan.execute('SELECT article_uid, parent, sender, subject, message, parent, public_key, sent, group_name FROM articles, groups WHERE groups.group_id = articles.group_id ORDER BY articles.sent DESC LIMIT ?,100', (0,)).fetchall():
+      if row[1] == '' or row[1] == row[0]:
+        # parent
+        link = "thread-%s.html" % sha1(row[0]).hexdigest()[:10]
+      else:
+        link = "thread-%s.html#%s" % (sha1(row[1]).hexdigest()[:10], sha1(row[0]).hexdigest()[:10])
+      if len(row[4]) > 200:
+        message = row[4][:200] + "\n[..]"
+      else:
+        message = row[4]
+      table.append(u'<tr><td class="dontwrap">%s</td><td class="dontwrap">%s</td><td>%s</td><td><a href="/%s" target="_blank">%s</a></td><td class="message_span">%s</td></tr>' % (datetime.utcfromtimestamp(row[7]).strftime('%Y/%m/%d %H:%M'), row[8], row[2], link, row[3], message))
+    out = out.replace("%%content%%", '<table border="1"><tr><th>sent</th><th>board</th><th>sender</th><th>subject</th><th>message</th></tr>\n' + '\n'.join(table))
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write(out.encode('UTF-8'))
+
   def send_error(self, errormessage):
     self.send_response(200)
     self.send_header('Content-type', 'text/plain')
     self.end_headers()
     self.wfile.write(errormessage)
+
+  def __get_navigation(self, current):
+    out = list()
+    for item in [('moderation_log', 'moderation log'), ('pic_log', 'pic log'), ('message_log', 'message log')]:
+      if item[0] == current:
+        out.append(item[1])
+      else:
+        out.append('<a href="%s">%s</a>' % item)
+    out.append('<br /><br />')
+    return out
 
   def die(self, message=''):
     self.origin.log("{0}:{1} wants to fuck around: {2}".format(self.client_address[0], self.client_address[1], message), 1)

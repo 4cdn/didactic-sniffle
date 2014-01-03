@@ -3,7 +3,7 @@
     <title>foobar</title>
     <link type="text/css" href="/styles.css" rel="stylesheet">
     <!--<link rel="stylesheet" href="http://overchan.testing/styles.css" type="text/css">-->
-        <style type="text/css">
+    <style type="text/css">
       table {
         border-collapse: collapse;
         font-size: 9pt;
@@ -13,6 +13,9 @@
       }
       .key {
         text-align: right;
+      }
+      .date {
+        padding-right: 10px;
       }
       .action {
         padding-left: 10px;
@@ -50,58 +53,64 @@
       }
     </style>
   </head>
-  <div>
-    <b>whitelisted public keys</b>
-    <table border="0px">
-      <tr>
-        <th>&nbsp;</th>
-        <th class="data_center">local_alias</th>
-        <th class="data_center">count</th>
-%%flag_names%%
-        <th>&nbsp;</th>
-      </tr>
-      %%mod_whitelist%%
-    </table>
-  </div>
-  <br />
-  <div>
-    <b>non whitelisted public keys</b>
-    <table border="0px">
-      <tr>
-        <th>&nbsp;</th>
-        <th class="data_center">count</th>
-        <th>&nbsp;</th>
-      </tr>
-      %%mod_unknown%%
-    </table>
-  </div>
-  <br />
-  <div>
-    <b>moderation accepted log</b>
-    <table class="mod_accepted">
-      <tr>
-        <!-- <th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</th> -->
-        <th>&nbsp;</th>
-        <th>action</th>
-        <th>post-id</th>
-        <th>reason</th>
-        <th>&nbsp;</th>
-      </tr>
-      %%mod_accepted%%
-    </table>
-  </div>
-  <br />
-  <div>
-    <b>moderation ignored log</b>
-    <table border="0px">
-      <tr>
-        <th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</th>
-        <th class="data">action</th>
-        <th>post-id</th>
-        <th>reason</th>
-        <th>&nbsp;</th>
-      </tr>
-      %%mod_ignored%%
-    </table>
-  </div>
+  <body>
+    %%navigation%%
+    <div>
+      <b>whitelisted public keys</b>
+      <table border="0px">
+        <tr>
+          <th>&nbsp;</th>
+          <th class="data_center">local_alias</th>
+          <th class="data_center">count</th>
+  %%flag_names%%
+          <th>&nbsp;</th>
+        </tr>
+        %%mod_whitelist%%
+      </table>
+    </div>
+    <br />
+    <div>
+      <b>non whitelisted public keys</b>
+      <table border="0px">
+        <tr>
+          <th>&nbsp;</th>
+          <th class="data_center">count</th>
+          <th>&nbsp;</th>
+        </tr>
+        %%mod_unknown%%
+      </table>
+    </div>
+    <br />
+    <div>
+      <b>moderation accepted log</b>
+      <table class="mod_accepted">
+        <tr>
+          <th>&nbsp;</th>
+          <!-- <th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</th> -->
+          <th>&nbsp;</th>
+          <th>action</th>
+          <th>post-id</th>
+          <th>reason</th>
+          <th>&nbsp;</th>
+        </tr>
+        %%mod_accepted%%
+      </table>
+    </div>
+    <br />
+    <div>
+      <b>moderation ignored log</b>
+      <table border="0px">
+        <tr>
+          <th>&nbsp;</th>
+          <!--<th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</th>-->
+          <th>&nbsp;</th>
+          <th class="data">action</th>
+          <th>post-id</th>
+          <th>reason</th>
+          <th>&nbsp;</th>
+        </tr>
+        %%mod_ignored%%
+      </table>
+    </div>
+  </body>
 </html>
