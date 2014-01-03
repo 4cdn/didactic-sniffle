@@ -258,6 +258,7 @@ class main(threading.Thread):
   def __init__(self, thread_name, args):
     threading.Thread.__init__(self)
     self.name = thread_name
+    self.sync_on_startup = False
     if 'debug' not in args:
       self.debug = 2
       self.log('debuglevel not defined, using default of debug = 2', 2)

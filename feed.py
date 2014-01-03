@@ -22,7 +22,7 @@ import Queue
 
 
 class feed(threading.Thread):
-  def __init__(self, master, connection=None, outstream=False, host=None, port=None, debug=2):
+  def __init__(self, master, connection=None, outstream=False, host=None, port=None, sync_on_startup=False, debug=2):
     threading.Thread.__init__(self)
     # debug level
     #     0: quiet
@@ -70,6 +70,7 @@ class feed(threading.Thread):
     self.welcome = '200 welcome much to artificial NNTP processing unit some random NNTPd v0.1, posting allowed'
     self.current_group_id = -1
     self.current_article_id = -1
+    self.sync_on_startup = sync_on_startup
 
   def add_article(self, message_id):
     self.queue.put(message_id)

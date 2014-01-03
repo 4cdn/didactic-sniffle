@@ -40,6 +40,10 @@ class main(threading.Thread):
       self.add_admin = args['add_admin']
     else:
       self.add_admin = ""
+    self.sync_on_startup = False
+    if 'sync_on_startup' in args:
+      if args['sync_on_startup'].lower() == 'true':
+        self.sync_on_startup = True
     self.SRNd = args['SRNd']
     self.log('initializing censor_httpd..', 3)
     args['censor'] = self

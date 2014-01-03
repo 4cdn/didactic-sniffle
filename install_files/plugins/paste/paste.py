@@ -48,6 +48,10 @@ class main(threading.Thread):
     self.templateDirectory = args['template_directory']
     self.css_file = args['css_file']
     self.html_title = args['title']
+    self.sync_on_startup = False
+    if 'sync_on_startup' in args:
+      if args['sync_on_startup'].lower() == 'true':
+        self.sync_on_startup = True
     if not os.path.exists(self.templateDirectory):
       self.log("error: template directory '{0}' does not exist".format(self.templateDirectory), 0)
       self.log("terminating", 0)
@@ -182,15 +186,25 @@ class main(threading.Thread):
     while self.running:
       try:
         message_id = self.queue.get(block=True, timeout=1)
-        f = open(os.path.join('articles', message_id), 'r')
-        message_content = f.readlines()
-        f.close()
-        if len(message_content) == 0:
-          self.log("empty NNTP message '{0}'. wtf?".format(message_id), 1)
+        if self.sqlite.execute('SELECT hash FROM pastes WHERE article_uid = ?', (message_id,)).fetchone():
+          self.log("run: %s already in database.." % message_id, 4)
           continue
-        if not self.parse_message(message_id, message_content):
-          continue
-        self.regenerate_index = True
+        try:
+          f = open(os.path.join('articles', message_id), 'r')
+          message_content = f.readlines()
+          f.close()
+          if len(message_content) == 0:
+            self.log("empty NNTP message '{0}'. wtf?".format(message_id), 1)
+            continue
+          if not self.parse_message(message_id, message_content):
+            continue
+          self.regenerate_index = True
+        except Exception as e:
+          self.log("something went wrong while parsing new article: %s" % e, 0)
+          try:
+            f.close()
+          except:
+            pass
       except Queue.Empty as e:
         if self.regenerate_index:
           self.recreate_index()
@@ -250,10 +264,6 @@ class main(threading.Thread):
     del result, template
 
   def parse_message(self, message_id, message_content):
-    if self.sqlite.execute('SELECT hash FROM pastes WHERE article_uid = ?', (message_id,)).fetchone():
-      self.log("{0} already in database..".format(message_id), 2)
-      return False
-    #self.log("new paste: {0}".format(message_id), 2)
     hash_message_uid = sha1(message_id).hexdigest()
     identifier = hash_message_uid[:10]
     subject = 'No Title'
@@ -301,6 +311,7 @@ class main(threading.Thread):
     f.close()
 
   def handle_new(self, signum, frame):
+    # FIXME use try: except around open(), also check for duplicate here
     if self.busy:
       self.retry = True
       return

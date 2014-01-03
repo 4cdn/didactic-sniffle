@@ -118,6 +118,10 @@ class main(threading.Thread):
         exit(1)
       else:
         return
+    self.sync_on_startup = False
+    if 'sync_on_startup' in args:
+      if args['sync_on_startup'].lower() == 'true':
+        self.sync_on_startup = True
     # TODO use tuple instead and load in above loop
     f = open(os.path.join(self.template_directory, 'board.tmpl'))
     self.template_board = f.read()
@@ -400,6 +404,7 @@ class main(threading.Thread):
         print "[{0}] {1}".format(self.name, line)
 
   def signal_handler(self, signum, frame):
+    # FIXME use try: except: around open(), also check for duplicate here
     for item in os.listdir(self.watching):
       link = os.path.join(self.watching, item)
       f = open(link, 'r')
@@ -428,12 +433,22 @@ class main(threading.Thread):
         ret = self.queue.get(block=True, timeout=1)
         if ret[0] == "article":
           message_id = ret[1]
+          if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (message_id,)).fetchone():
+            self.log("run: {0} already in database..".format(message_id), 4)
+            continue
           #message_id = self.queue.get(block=True, timeout=1)
           self.log("got article %s" % message_id, 5)
-          f = open(os.path.join('articles', message_id), 'r')
-          if not self.parse_message(message_id, f):
-            f.close()
-            self.log("got article %s, parse_message failed. somehow." % message_id, 5)
+          try:
+            f = open(os.path.join('articles', message_id), 'r')
+            if not self.parse_message(message_id, f):
+              f.close()
+              self.log("got article %s, parse_message failed. somehow." % message_id, 5)
+          except Exception as e:
+            self.log("something went wrong while trying to parse article: %s" % e, 0)
+            try:
+              f.close()
+            except:
+              pass
         elif ret[0] == "control":
           self.handle_control(ret[1])
         else:
@@ -489,11 +504,7 @@ class main(threading.Thread):
     return '<span class="quote">%s</span>' % rematch.group(0).rstrip("\r")
 
   def parse_message(self, message_id, fd):
-    if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (message_id,)).fetchone():
-      self.log("{0} already in database..".format(message_id), 2)
-      return False
     self.log('new message: {0}'.format(message_id), 2)
-
     hash_message_uid = sha1(message_id).hexdigest()
     identifier = hash_message_uid[:10]
     subject = 'None'
