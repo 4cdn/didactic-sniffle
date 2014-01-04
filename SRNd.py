@@ -465,6 +465,7 @@ class SRNd(threading.Thread):
       time.sleep(0.1)
     self.update_hooks()
 
+    current_sync_targets = list()
     for group in os.listdir('groups'):
       group_dir = os.path.join('groups', group)
       if os.path.isdir(group_dir):
