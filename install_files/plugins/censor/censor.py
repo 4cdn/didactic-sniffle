@@ -189,7 +189,7 @@ class main(threading.Thread):
     hasher.update(oldline.replace("\r\n", ""))
     try:
       nacl.signing.VerifyKey(unhexlify(public_key)).verify(hasher.digest(), unhexlify(signature))
-      self.log("found valid signature: %s" % message_id, 1)
+      self.log("found valid signature: %s" % message_id, 3)
       self.log("seeking from %i back to %i" % (f.tell(), bodyoffset), 4)
       f.seek(bodyoffset)
     except Exception as e:
@@ -273,7 +273,7 @@ class main(threading.Thread):
         data = line.lower().split(" ", 1)[1]
         accepted = 0
         reason_id = 1
-        self.log("not authorized for '%s': %i" % (command, key_id), 2)
+        self.log("not authorized for '%s': %i" % (command, key_id), 3)
       command_id = int(self.censordb.execute("SELECT id FROM commands WHERE command = ?", (command,)).fetchone()[0])
       try:
         self.censordb.execute('INSERT INTO log (accepted, command_id, data, key_id, reason_id, comment, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)', (accepted, command_id, data, key_id, reason_id, comment, int(time.time())))
@@ -296,7 +296,7 @@ class main(threading.Thread):
     self.log("got deletion request: %s" % line, 3)
     command, message_id = line.split(" ", 1)
     self.log("should delete %s" % message_id, 3)
-    self.log("moving %s to articles/censored/" % message_id, 1)
+    self.log("moving %s to articles/censored/" % message_id, 3)
     if os.path.exists(os.path.join("articles", message_id)):
       os.rename(os.path.join("articles", message_id), os.path.join("articles", "censored", message_id))
     elif not os.path.exists(os.path.join('articles', 'censored', message_id)):
@@ -305,11 +305,11 @@ class main(threading.Thread):
     groups = list()
     for row in self.dropperdb.execute('SELECT group_name, article_id from articles, groups WHERE message_id=? and groups.group_id = articles.group_id', (message_id,)).fetchall():
       groups.append(row[0])
-      self.log("deleting groups/%s/%i" % (row[0], row[1]), 1)
+      self.log("deleting groups/%s/%i" % (row[0], row[1]), 3)
       try:
         os.unlink(os.path.join("groups", str(row[0]), str(row[1])))
       except Exception as e:
-        self.log("could not delete: %s" % e, 0)
+        self.log("could not delete: %s" % e, 3)
     return (message_id, groups)
   
   def handle_sticky(self, line):
