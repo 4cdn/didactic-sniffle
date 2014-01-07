@@ -180,3 +180,13 @@
       .quote {
         color: #00AA00;
       }
+      .code {
+        background-color: #303030;
+        border: 1px solid #404040;
+        clear: right;
+        font-family: monospace;
+        font-size: 9pt;
+        overflow: auto;
+        white-space: pre;
+        width: 80%;
+      }
