@@ -16,6 +16,8 @@ class SRNd(threading.Thread):
 
     self.read_and_parse_config()
 
+    self.debug = 2
+
     # create some directories
     for directory in ('filesystem', 'outfeeds', 'plugins'):
       dir = os.path.join(self.data_dir, 'config', 'hooks', directory)
@@ -411,14 +413,25 @@ class SRNd(threading.Thread):
         f = open(outfeed_file)
         sync_on_startup = False
         debuglevel = 2
+        proxy_type = None
+        proxy_ip = None
+        proxy_port = None
         for line in f:
-          if line.lower().startswith('#start_param sync_on_startup=true'):
-            sync_on_startup = True
-          elif line.lower().startswith('#start_param debug='):
-            try:
-              debuglevel = int(line.split('=')[1][0])
-            except:
-              pass
+          lowerline = line.lower()
+          if lowerline.startswith('#start_param '):
+            if lowerline.startswith('#start_param sync_on_startup=true'):
+              sync_on_startup = True
+            elif lowerline.startswith('#start_param debug='):
+              try:
+                debuglevel = int(lownerline.split('=')[1][0])
+              except:
+                pass
+            elif lowerline.startswith('#start_param proxy_type='):
+              proxy_type = lowerline.split('=', 1)[1].rstrip()
+            elif lowerline.startswith('#start_param proxy_ip='):
+              proxy_ip = lowerline.split('=', 1)[1].rstrip()
+            elif lowerline.startswith('#start_param proxy_port='):
+              proxy_port = lowerline.split('=', 1)[1].rstrip()
         f.close()
         if ':' in outfeed:
           host = ':'.join(outfeed.split(':')[:-1])
@@ -429,10 +442,22 @@ class SRNd(threading.Thread):
           port = 119
         name = "outfeed-{0}-{1}".format(host, port)
         current_feedlist.append(name)
+        proxy = None
+        if proxy_type != None:
+          if proxy_ip != None:
+            try:
+              proxy_port = int(proxy_port)
+              proxy = (proxy_type, proxy_ip, proxy_port)
+              self.log("starting outfeed %s using proxy: %s" % (name, str(proxy)), 2)
+            except:
+              pass
         if name not in self.feeds:
-          self.feeds[name] = feed.feed(self, outstream=True, host=host, port=port, sync_on_startup=sync_on_startup, debug=debuglevel)
-          self.feeds[name].start()
-          counter_new += 1
+          try:
+            self.feeds[name] = feed.feed(self, outstream=True, host=host, port=port, sync_on_startup=sync_on_startup, proxy=proxy, debug=debuglevel)
+            self.feeds[name].start()
+            counter_new += 1
+          except Exception as e:
+            self.log("could not start outfeed %s: %s" % (name, e), 0)
     counter_removed = 0
     feeds = list()
     for name in self.feeds:
@@ -451,8 +476,9 @@ class SRNd(threading.Thread):
     self.update_hooks()
 
   def log(self, message, debuglevel):
-    for line in message.split("\n"):
-      print "[%s] %s" % ("SRNd", line.rstrip("\r\n"))
+    if self.debug >= debuglevel:
+      for line in message.split("\n"):
+        print "[%s] %s" % ("SRNd", line.rstrip("\r\n"))
 
   def run(self):
     self.running = True
@@ -469,7 +495,7 @@ class SRNd(threading.Thread):
     for group in os.listdir('groups'):
       group_dir = os.path.join('groups', group)
       if os.path.isdir(group_dir):
-        self.log("startup sync, checking %s.." % group, 0)
+        self.log("startup sync, checking %s.." % group, 3)
         current_sync_targets = list()
         for group_item in self.hooks:
           if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
@@ -494,7 +520,7 @@ class SRNd(threading.Thread):
                   name = 'outfeed-' + ':'.join(parts[:-1]) + '-' + parts[-1]
                   if name in self.feeds:
                     if self.feeds[name].sync_on_startup and name not in current_sync_targets:
-                      self.log("startup sync, adding %s" % name, 0)
+                      self.log("startup sync, adding %s" % name, 3)
                       current_sync_targets.append(name)
                   else:
                     self.log("unknown outfeed detected. wtf? %s" % name, 0)
@@ -502,7 +528,7 @@ class SRNd(threading.Thread):
                   name = 'plugin-' + current_hook[8:]
                   if name in self.plugins:
                     if self.plugins[name].sync_on_startup and name not in current_sync_targets:
-                      self.log("startup sync, adding %s" % name, 0)
+                      self.log("startup sync, adding %s" % name, 3)
                       current_sync_targets.append(name)
                   else:
                     self.log("unknown plugin detected. wtf? %s" % name, 0)
@@ -519,7 +545,7 @@ class SRNd(threading.Thread):
                 self.plugins[current_hook].add_article(message_id)
               else:
                 self.log("unknown sync_hook detected. wtf? %s" % hook, 0)
-    self.log("startup_sync done. hopefully.", 0)
+    self.log("startup_sync done. hopefully.", 3)
     del current_sync_targets
     
     #files = filter(lambda f: os.path.isfile(os.path.join('articles', f)), os.listdir('articles'))

@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import socket
+import sockssocket
 import select
 import threading
 import time
@@ -22,7 +23,7 @@ import Queue
 
 
 class feed(threading.Thread):
-  def __init__(self, master, connection=None, outstream=False, host=None, port=None, sync_on_startup=False, debug=2):
+  def __init__(self, master, connection=None, outstream=False, host=None, port=None, sync_on_startup=False, proxy=None, debug=2):
     threading.Thread.__init__(self)
     # debug level
     #     0: quiet
@@ -35,11 +36,8 @@ class feed(threading.Thread):
     self.debug = debug
     self.state = 'init'
     self.SRNd = master
-    if outstream:
-      if ':' in host:
-        self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-      else:
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self.proxy = proxy
+    if outstream:          
       self.host = host
       self.port = port
       self.queue = Queue.Queue()
@@ -50,6 +48,24 @@ class feed(threading.Thread):
       self.outstream_currently_testing = ''
       self.polltimeout = 500 # 1 * 1000
       self.name = 'outfeed-{0}-{1}'.format(self.host, self.port)
+      if ':' in self.host:
+        if self.proxy != None:
+          raise Exception("can't use proxy server for ipv6 connections")
+        self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+      else:
+        if self.proxy == None:
+          self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        elif self.proxy[0] == 'socks5':
+          self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+          self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS5, self.proxy[1], self.proxy[2], rdns=True)
+        elif self.proxy[0] == 'socks4':
+          self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+          self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS4, self.proxy[1], self.proxy[2], rdns=True)
+        elif self.proxy[0] == 'http':
+          self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+          self.socket.setproxy(sockssocket.PROXY_TYPE_HTTP, self.proxy[1], self.proxy[2], rdns=True)
+        else:
+          raise Exception("unknown proxy type %s, must be one of socks5, socks4, http." % self.proxy[0])
     else:
       self.socket = connection[0]
       self.fileno = self.socket.fileno()
@@ -57,7 +73,7 @@ class feed(threading.Thread):
       self.port = connection[1][1]
       self.polltimeout = -1
       self.name = 'infeed-{0}-{1}'.format(self.host, self.port)
-    self.socket.setblocking(0)
+    #self.socket.setblocking(0)
     self.buffersize = 2**16
     self.caps = [
         '101 i support to the following:',
@@ -122,12 +138,21 @@ class feed(threading.Thread):
         try:
           self.socket.connect((self.host, self.port))
           connected = True
-          if self.debug > 1: print "[{0}] connection established".format(self.name)
+          if self.debug > 1: print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
         except socket.error as e:
-          if self.debug > 2: print "[{0}] {1}".format(self.name, e)
+          if e.errno == 106:
+            # tunnelendpoint already connected. wtf? only happened via proxy
+            print "[%s] %s, setting connected = True" % (self.name, e)
+            connected = True
+          if self.debug > 1:
+            print "[%s] socket.error: %s" % (self.name, e)
+          time.sleep(10)
+        except socksocket.ProxyError as e:
+          if self.debug > 1:
+            print "[%s] ProxyError: %s" % (self.name, e)
           time.sleep(10)
     else:
-      if self.debug > 1: print "[{0}] connection established".format(self.name)
+      if self.debug > 1: print "[%s] connection established" % self.name
       self.send(self.welcome + '\r\n')
     self.state = 'idle'
     poll = select.poll()
@@ -139,12 +164,12 @@ class feed(threading.Thread):
     while self.running:
       if self.con_broken:
         if not self.outstream:
-          print "[{0}] not an outstream, terminating".format(self.name)
+          print "[%s] not an outstream, terminating" % self.name
           break
         else:
-          if self.debug > 1: print "[{0}] connection broken".format(self.name)
+          if self.debug > 1: print "[%s] connection broken" % self.name
           if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
-            if self.debug > 1: print "[{0}] no article to send, sleeping".format(self.name)
+            if self.debug > 1: print "[%s] no article to send, sleeping" % self.name
             while(self.running and self.queue.qsize() == 0):
               time.sleep(2)
             if not self.running:
@@ -159,13 +184,27 @@ class feed(threading.Thread):
             pass
           self.socket.close()
           if ':' in self.host:
+            if self.proxy != None:
+              raise Exception("can't use proxy server for ipv6 connections")
             self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
           else:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if self.proxy == None:
+              self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            elif self.proxy[0] == 'socks5':
+              self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+              self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS5, self.proxy[1], self.proxy[2], rdns=True)
+            elif self.proxy[0] == 'socks4':
+              self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+              self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS4, self.proxy[1], self.proxy[2], rdns=True)
+            elif self.proxy[0] == 'http':
+              self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+              self.socket.setproxy(sockssocket.PROXY_TYPE_HTTP, self.proxy[1], self.proxy[2], rdns=True)
+            else:
+              raise Exception("unknown proxy type: %s. must be one of socks5, socks4, http." % self.proxy[0])
           while self.running and not connected:
             try:
               self.socket.connect((self.host, self.port))
-              if self.debug > 1: print "[{0}] connection established".format(self.name)
+              if self.debug > 1: print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
               connected = True
               self.con_broken = False
               poll = select.poll()
@@ -176,9 +215,14 @@ class feed(threading.Thread):
               self.reconnect = False
               self.state = 'idle'
             except socket.error as e:
-              if self.debug > 2: print "[{0}] reconnecting:".format(self.name), e
+              if self.debug > 1: print "[{0}] reconnecting socks.error:".format(self.name), e
               time.sleep(10)
+            except sockssocket.ProxyError as e:
+              if self.debug > 1: print "[{0}] reconnecting ProxyError:".format(self.name), e
+              if self.debug > 1: print "[{0}] recreating proxy socket"
+              break
           if not self.running: break
+          if not connected: continue
       if poll(self.polltimeout):
         self.state = 'receiving'
         cur_len = len(in_buffer)
@@ -198,6 +242,10 @@ class feed(threading.Thread):
           else:
             print e
             raise e
+        except sockssocket.ProxyError as e:
+          print "[%s] proxy error: %s" % (self.name, e)
+          self.con_broken = True
+          continue
             #if self.debug > 1: print "[{0}] connection problem: {1}".format(self.name, e)
             #self.con_broken = True
             #break
@@ -346,7 +394,7 @@ class feed(threading.Thread):
           # MODE STREAM test successfull
           self.outstream_stream = True
           self.outstream_ready = True
-        elif commands[0] == '501':
+        elif commands[0] == '501' or commands[0] == '500':
           if self.outstream_currently_testing == '':
             # MODE STREAM test failed
             self.outstream_currently_testing = 'IHAVE'
@@ -415,8 +463,7 @@ class feed(threading.Thread):
           except:
             pass
         else:
-          print "[outfeed] unknown response to POST:"
-          print line
+          print "[%s] unknown response to POST: %s" % (self.name, line)
       return
     elif commands[0] == 'CAPABILITIES':
       for cap in self.caps:
