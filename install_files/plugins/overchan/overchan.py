@@ -150,6 +150,7 @@ class main(threading.Thread):
     
     self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
     self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
+    self.coder = re.compile('\[code](.*?)\[/code]', re.DOTALL)
 
     if __name__ == '__main__':
       i = open(os.path.join(self.template_directory, self.css_file), 'r')
@@ -315,7 +316,7 @@ class main(threading.Thread):
         message_id = line.lower().split(" ")[1]
         row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
-          self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 1)
+          self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 3)
         else:
           self.log("deleting attachments for message_id %s" % message_id, 2)
           if row[3] not in self.regenerate_boards:
@@ -344,7 +345,7 @@ class main(threading.Thread):
         message_id = line.lower().split(" ")[1]
         row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
-          self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 1)
+          self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 3)
         else:
           self.log("deleting message_id %s" % message_id, 2)
           if row[3] not in self.regenerate_boards:
@@ -502,6 +503,9 @@ class main(threading.Thread):
   
   def quoteit(self, rematch):
     return '<span class="quote">%s</span>' % rematch.group(0).rstrip("\r")
+
+  def codeit(self, rematch):
+    return '<div class="code">%s</div>' % rematch.group(1)
 
   def parse_message(self, message_id, fd):
     self.log('new message: {0}'.format(message_id), 2)
@@ -873,10 +877,12 @@ class main(threading.Thread):
         childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
         message = self.linker.sub(self.linkit, child_row[4])
         message = self.quoter.sub(self.quoteit, message)
+        message = self.coder.sub(self.codeit, message)
         childTemplate = childTemplate.replace('%%message%%', message)
         childs.append(childTemplate)
       message = self.linker.sub(self.linkit, root_row[4])
       message = self.quoter.sub(self.quoteit, message)
+      message = self.coder.sub(self.codeit, message)
       if missing > 0:
         if missing == 1:
           post = "post"
@@ -963,6 +969,7 @@ class main(threading.Thread):
     rootTemplate = rootTemplate.replace('%%imagename%%', root_row[5])
     message = self.linker.sub(self.linkit, root_row[4])
     message = self.quoter.sub(self.quoteit, message)
+    message = self.coder.sub(self.codeit, message)
     rootTemplate = rootTemplate.replace('%%message%%', message)
     childs = list()
     childs.append('')
@@ -1002,6 +1009,7 @@ class main(threading.Thread):
       childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
       message = self.linker.sub(self.linkit, child_row[4])
       message = self.quoter.sub(self.quoteit, message)
+      message = self.coder.sub(self.codeit, message)
       childTemplate = childTemplate.replace('%%message%%', message)
       childs.append(childTemplate)
 
