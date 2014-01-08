@@ -875,12 +875,25 @@ class main(threading.Thread):
         childTemplate = childTemplate.replace('%%author%%', child_row[1])
         childTemplate = childTemplate.replace('%%subject%%', child_row[2])
         childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
-        message = self.linker.sub(self.linkit, child_row[4])
+        
+        if len(child_row[4].split('\n')) > 20:
+          message = '\n'.join(child_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], sha1(child_row[0]).hexdigest()[:10])
+        elif len(child_row[4]) > 1000:
+          message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], sha1(child_row[0]).hexdigest()[:10])
+        else:
+          message = child_row[4]
+        message = self.linker.sub(self.linkit, message) 
         message = self.quoter.sub(self.quoteit, message)
         message = self.coder.sub(self.codeit, message)
         childTemplate = childTemplate.replace('%%message%%', message)
         childs.append(childTemplate)
-      message = self.linker.sub(self.linkit, root_row[4])
+      if len(root_row[4].split('\n')) > 20:
+        message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      elif len(root_row[4]) > 1000:
+        message = root_row[4][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      else:
+        message = root_row[4]
+      message = self.linker.sub(self.linkit, message)
       message = self.quoter.sub(self.quoteit, message)
       message = self.coder.sub(self.codeit, message)
       if missing > 0:
