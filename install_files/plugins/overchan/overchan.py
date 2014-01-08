@@ -757,14 +757,14 @@ class main(threading.Thread):
   def generate_board(self, group_id):
     full_board_name = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0]
     board_name = full_board_name.split('.', 1)[1]
-    threads = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid)', (group_id,)).fetchone()[0])
+    threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, 10*10)).fetchone()[0])
     pages = int(threads / 10)
     if threads % 10 != 0:
       pages += 1;
     thread_counter = 0
     page_counter = 1
     threads = list()
-    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC', (group_id,)).fetchall():
+    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ?', (group_id, 10*10)).fetchall():
       root_message_id_hash = sha1(root_row[0]).hexdigest() # self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
       #if hash_result:
       #  root_message_id_hash = hash_result[0]
