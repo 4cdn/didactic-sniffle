@@ -128,17 +128,18 @@ class postman(BaseHTTPRequestHandler):
           return
         redirect_duration = 4
     uid_host = self.origin.frontends[frontend]['uid_host']
-    # web.news.sfor.ano
 
     name = self.origin.frontends[frontend]['defaults']['name']
     email = self.origin.frontends[frontend]['defaults']['email']
     subject = self.origin.frontends[frontend]['defaults']['subject']
 
-    signature = False
     if 'name' in post_vars:
       if post_vars['name'].value != '':
         name = post_vars['name'].value
-        signature = False
+
+    signature = False
+    if 'allow_signatures' in self.origin.frontends[frontend]:
+      if self.origin.frontends[frontend]['allow_signatures'].lower() in ('true', 'yes'):
         if '#' in name:
           if len(name) >= 65 and name[-65] == '#':
             try:
@@ -165,19 +166,26 @@ class postman(BaseHTTPRequestHandler):
                 del out
                 signature = True
               except Exception as e:
+                # FIXME remove "secret" trip? disable signature?
                 self.origin.log("can't create keypair: %s" % e, 2)
             del parts
-      if name == '':
-        name = self.origin.frontends[frontend]['defaults']['name']
+          if name == '':
+            name = self.origin.frontends[frontend]['defaults']['name']
               
     if 'email' in post_vars:
       #FIXME add email validation: .+@.+\..+
       if post_vars['email'].value != '':
         email = post_vars['email'].value
+
     if 'subject' in post_vars:
-      # news: no subject
       if post_vars['subject'].value != '':
         subject = post_vars['subject'].value
+
+    sage = ''
+    if 'allow_sage' in self.origin.frontends[frontend]:
+      if self.origin.frontends[frontend]['allow_sage'].lower() in ('true', 'yes'):
+        if subject.lower().startswith('sage') or subject.lower().startswith('saging'):
+          sage = "\nX-Sage: True"
 
     sender = '{0} <{1}>'.format(name, email)
     reply = ''
@@ -207,9 +215,9 @@ class postman(BaseHTTPRequestHandler):
       link = os.path.join('incoming', 'tmp', boundary)
     f = open(link, 'w')
     if file_name == '':
-      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment))
+      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage))
     else:
-      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name))
+      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage))
       base64.encode(post_vars['file'].file, f)
       f.write('--{0}--\n'.format(boundary))
     f.close()
@@ -229,12 +237,13 @@ class postman(BaseHTTPRequestHandler):
       signed = open(link[:-1], 'w')
       f = open(link, 'r')
       link = link[:-1]
-      signed.write(self.origin.template_message_signed.format(sender, date, group, subject, message_uid, reply, uid_host, pubkey, signature))
+      signed.write(self.origin.template_message_signed.format(sender, date, group, subject, message_uid, reply, uid_host, pubkey, signature, sage))
       f.seek(0)
       for line in f:
         signed.write(line)
       f.close()
       signed.close()
+      # FIXME unlink f() a.k.a. incoming/tmp/*_
       del hasher
       del keypair
       del pubkey

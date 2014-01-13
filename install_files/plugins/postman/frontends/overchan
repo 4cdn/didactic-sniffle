@@ -5,6 +5,8 @@
 uid_host=web.overchan.i.did.not.read.the.config
 #enforce_target=%%sha1_message_uid_10%%.html
 #enforce_board=some.board.name
+allow_signatures=True
+allow_sage=True
 
 (required_fields)
 name
@@ -21,6 +23,9 @@ email=nobody@no.where
 
 (allowed_files)
 image/*
+application/pdf
+application/ps
+application/postscript
 
 (allowed_boards)
 overchan.*
