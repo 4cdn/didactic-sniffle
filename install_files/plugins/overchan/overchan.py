@@ -150,7 +150,7 @@ class main(threading.Thread):
     
     self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
     self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
-    self.coder = re.compile('\[code](.*?)\[/code]', re.DOTALL)
+    self.coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
 
     if __name__ == '__main__':
       i = open(os.path.join(self.template_directory, self.css_file), 'r')
