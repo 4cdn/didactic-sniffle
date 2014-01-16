@@ -123,6 +123,19 @@ class feed(threading.Thread):
     except socket.error as e:
       if e.errno != 9 and e.errno != 107:   # 9 == bad filedescriptor, 107 == not connected
         raise e
+      
+  def cooldown(self, additional_message=''):
+    # FIXME write that fuckin self.log() def already!
+    if self.cooldown_counter == 0:
+      self.cooldown_counter += 1
+      return
+    if self.debug > 1 and self.cooldown_counter != 10:
+      print "[%s] %ssleeping %s seconds" % (self.name, additional_message, self.cooldown_period * self.cooldown_counter)
+    end_time = int(time.time()) + self.cooldown_period * self.cooldown_counter
+    while self.running and int(time.time()) < end_time:
+      time.sleep(2)
+    if self.cooldown_counter != 10:
+      self.cooldown_counter += 1
 
   def run(self):
     self.sqlite_conn = sqlite3.connect('dropper.db3')
@@ -131,26 +144,30 @@ class feed(threading.Thread):
     connected = False
     self.multiline = False
     self.multiline_out = False
+    self.cooldown_period = 60
+    self.cooldown_counter = 0
     if self.outstream:
       self.articles_to_send = list()
       while self.running and not connected:
+        self.state = 'cooldown'
+        self.cooldown()
+        if not self.running:
+          break
         self.state = 'connecting'
         try:
           self.socket.connect((self.host, self.port))
           connected = True
-          if self.debug > 1: print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
+          if self.debug > 1 and self.cooldown_counter != 10:
+            print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
         except socket.error as e:
           if e.errno == 106:
             # tunnelendpoint already connected. wtf? only happened via proxy
+            # FIXME debug this
             print "[%s] %s, setting connected = True" % (self.name, e)
             connected = True
-          if self.debug > 1:
-            print "[%s] socket.error: %s" % (self.name, e)
-          time.sleep(10)
-        except socksocket.ProxyError as e:
-          if self.debug > 1:
-            print "[%s] ProxyError: %s" % (self.name, e)
-          time.sleep(10)
+          if self.debug > 1: print "[%s] connect socket.error: %s" % (self.name, e)
+        except sockssocket.ProxyError as e:
+          if self.debug > 1: print "[%s] connect ProxyError: %s" % (self.name, e)
     else:
       if self.debug > 1: print "[%s] connection established" % self.name
       self.send(self.welcome + '\r\n')
@@ -167,15 +184,6 @@ class feed(threading.Thread):
           print "[%s] not an outstream, terminating" % self.name
           break
         else:
-          if self.debug > 1: print "[%s] connection broken" % self.name
-          if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
-            if self.debug > 1: print "[%s] no article to send, sleeping" % self.name
-            while(self.running and self.queue.qsize() == 0):
-              time.sleep(2)
-            if not self.running:
-              break
-          if self.debug > 1: print "[{0}] reconnecting..".format(self.name)
-          self.state = 'connecting'
           connected = False
           try:
             self.socket.shutdown(socket.SHUT_RDWR)
@@ -202,9 +210,23 @@ class feed(threading.Thread):
             else:
               raise Exception("unknown proxy type: %s. must be one of socks5, socks4, http." % self.proxy[0])
           while self.running and not connected:
+            # FIXME creat def connect(), use self.vars for buffer, connected and poll
+            if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
+              if self.debug > 1: print "[%s] connection broken. no article to send, sleeping" % self.name
+              self.state = 'nothing_to_send'
+              while(self.running and self.queue.qsize() == 0):
+                time.sleep(2)
+            else:
+              self.state = 'cooldown'
+              self.cooldown('connection broken. ')
+            if not self.running:
+              break
+            self.state = 'connecting'
+            if self.debug > 2: print "[%s] reconnecting.." % self.name
             try:
               self.socket.connect((self.host, self.port))
-              if self.debug > 1: print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
+              if self.debug > 1 and self.cooldown_counter != 10:
+                print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
               connected = True
               self.con_broken = False
               poll = select.poll()
@@ -215,11 +237,10 @@ class feed(threading.Thread):
               self.reconnect = False
               self.state = 'idle'
             except socket.error as e:
-              if self.debug > 1: print "[{0}] reconnecting socks.error:".format(self.name), e
-              time.sleep(10)
+              if self.debug > 1: print "[%s] reconnecting socks.error: %s" % (self.name, e)
             except sockssocket.ProxyError as e:
-              if self.debug > 1: print "[{0}] reconnecting ProxyError:".format(self.name), e
-              if self.debug > 1: print "[{0}] recreating proxy socket"
+              if self.debug > 1: print "[%s] reconnecting ProxyError: %s" % (self.name, e)
+              if self.debug > 1: print "[%s] recreating proxy socket" % self.name
               break
           if not self.running: break
           if not connected: continue
@@ -229,6 +250,7 @@ class feed(threading.Thread):
         try:
           in_buffer += self.socket.recv(self.buffersize)
         except socket.error as e:
+          print "[%s] DEBUG socket.error.errno: %s, socket.error: %s" % (self.name, e.errno, e)
           if e.errno == 11:
             # 11 Resource temporarily unavailable
             time.sleep(0.1)
@@ -253,7 +275,6 @@ class feed(threading.Thread):
         #print "[{0}] received: {1}".format(self.name, received)
         if received == 0:
           self.con_broken = True
-          #break
           continue
         if not '\r\n' in in_buffer:
           continue
@@ -389,6 +410,8 @@ class feed(threading.Thread):
       if not self.outstream_ready:
         if commands[0] == '200':
           # TODO check CAPABILITES
+          self.cooldown_counter = 0
+          self.send('MODE STREAM\r\n')
           self.send('MODE STREAM\r\n')
         elif commands[0] == '203':
           # MODE STREAM test successfull
@@ -416,6 +439,10 @@ class feed(threading.Thread):
           self.outstream_ihave = True
           self.outstream_ready = True
         # FIXME how to treat try later for IHAVE and CHECK?
+        return
+      if commands[0] == '200':
+        # TODO check specs for reply 200 again, only valid as first welcome line?
+        self.cooldown_counter = 0
         return
       if self.outstream_stream:
         if commands[0] == '238':
