@@ -42,23 +42,29 @@ class dropper(threading.Thread):
       link = os.path.join('incoming', item)
       if os.path.isfile(link):
         if self.debug > 2: print "[dropper] processing new article: {0}".format(link)
+        # TODO read line by line in validate and sanitize, combine them into single def. likely self.write() as well.
+        # TODO ^ read and write headers directly, fixing them on the fly. write rest of article line by line.
         f = open(link, 'r')
         article = f.readlines()
         f.close()
-        if not self.validate(article):
-          if self.debug > 1: print "[dropper] article is invalid: {0}".format(item)
+        try:
+          self.validate(article)
+          message_id, groups, additional_headers = self.sanitize(article)
+        except Exception as e:
+          if self.debug > -1: print '[dropper] article is invalid. %s: %s' % (item, e)
           os.rename(link, os.path.join('articles', 'invalid', item))
           continue
-        message_id, groups, additional_headers = self.sanitize(article)
-        if len(groups) == 0:
-          if self.debug > 1: print "[dropper] article is invalid. newsgroup missing: {0}".format(item)
-          os.rename(link, os.path.join('articles', 'invalid', item))
+        if os.path.isfile(os.path.join('articles', message_id)):
+          if self.debug > 2: print "[dropper] article is duplicate: %s, deleting." % item
+          os.remove(link)
           continue
-        if int(self.sqlite.execute('SELECT count(message_id) FROM articles WHERE message_id = ?', (message_id,)).fetchone()[0]) != 0:
-          if self.debug > 2: print "[dropper] article is duplicate: {0}".format(item)
-          os.rename(link, os.path.join('articles', 'duplicate', item))
+        elif os.path.isfile(os.path.join('articles', 'censored', message_id)):
+          if self.debug > 0: print "[dropper] article is blacklisted: %s, deleting. this should not happen. at all." % message_id
+          os.remove(link)
           continue
-        #print "[dropper] all good, writing article.."
+        elif self.debug > 1:
+          if int(self.sqlite.execute('SELECT count(message_id) FROM articles WHERE message_id = ?', (message_id,)).fetchone()[0]) != 0:
+            print '[dropper] article \'%s\' was blacklisted and is moved back into incoming/. processing again' % message_id
         self.write(message_id, groups, additional_headers, article)
         os.remove(link)
     self.busy = False
@@ -72,7 +78,20 @@ class dropper(threading.Thread):
     # check if newsgroup exists in message
     # read required headers into self.dict
     if self.debug > 3: print "[dropper] validating article.."
-    if not '\n' in article: return False
+    if not '\n' in article:
+      raise Exception("no header or body in article")
+    for index in xrange(0, len(article)):
+      if article[index].lower().startswith('message-id:'):
+        if '/' in article[index]:
+          raise Exception('illegal message-id \'%s\': contains /' % article[index].rstrip())
+      elif article[index].lower().startswith('from:'):
+        # FIXME parse and validate from
+        pass
+      elif article[index].lower().startswith('newsgroups:'):
+        if '/' in article[index]:
+          raise Exception('illegal newsgroups \'%s\': contains /' % article[index].rstrip())
+      elif article[index] == '\n':
+        break
     return True
 
   def sanitize(self, article):
@@ -84,6 +103,7 @@ class dropper(threading.Thread):
     for req in self.reqs:
       found[req] = False
     done = False
+    # FIXME*3 read Path from config
     for index in xrange(0, len(article)):
       for key in self.reqs:
         if article[index].lower().startswith(key + ':'):
@@ -91,7 +111,7 @@ class dropper(threading.Thread):
             article[index] = 'Path: sfor-SRNd!' + article[index].split(' ', 1)[1]
           elif key == 'from':
             # FIXME parse and validate from
-            a = 1
+            pass
           found[key] = True
           vals[key] = article[index].split(' ', 1)[1][:-1]
           #print "key: " + key + " value: " + vals[key]
@@ -107,7 +127,7 @@ class dropper(threading.Thread):
         if req == 'message-id':
           if self.debug > 2: print "[dropper] should generate message-id.."
           rnd = ''.join(random.choice(string.ascii_lowercase) for x in range(10))
-          vals[req] = '{0}{1}@dropper.SRNd'.format(rnd, int(time.time()))
+          vals[req] = '{0}{1}@POSTED_dropper.SRNd'.format(rnd, int(time.time()))
           additional_headers.append('Message-ID: {0}\n'.format(vals[req]))
         elif req == 'newsgroups':
           vals[req] = list()
@@ -127,8 +147,8 @@ class dropper(threading.Thread):
       else:
         if req == 'newsgroups':
           vals[req] = vals[req].split(',')
-        #print "found {0}: {1}".format(req, vals[req])
-    #print "got message_id:", vals['message-id']
+    if len(vals['newsgroups']) == 0:
+      raise Exception('Newsgroup is missing or empty')
     return (vals['message-id'], vals['newsgroups'], additional_headers)
 
   def write(self, message_id, groups, additional_headers, article):
@@ -146,26 +166,34 @@ class dropper(threading.Thread):
     for index in xrange(0, len(article)):
       f.write(article[index])
     f.close()
-    self.sqlite_hasher.execute('INSERT INTO article_hashes VALUES (?, ?)', (message_id, sha1(message_id).hexdigest()))
-    self.sqlite_hasher_conn.commit()
+    try:
+      self.sqlite_hasher.execute('INSERT INTO article_hashes VALUES (?, ?)', (message_id, sha1(message_id).hexdigest()))
+      self.sqlite_hasher_conn.commit()
+    except:
+      pass
     hooks = dict()
     for group in groups:
       if self.debug > 3: print "[dropper] creating link for", group
       article_link = '../../' + link
       group_dir = os.path.join('groups', group)
       if not os.path.exists(group_dir):
-        self.sqlite.execute('INSERT INTO groups VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (None, group, 1, 0, 0, 'y', int(time.time()), int(time.time())))
         article_id = 1
+        self.sqlite.execute('INSERT INTO groups VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (None, group, 1, 0, 0, 'y', int(time.time()), int(time.time())))
+        self.sqlite.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (message_id, group_id, article_id, int(time.time())))
+        self.sqlite_conn.commit()
         if self.debug > 3: print "[dropper] creating directory", group_dir
         os.mkdir(group_dir)
       else:
-        article_id = int(self.sqlite.execute('SELECT highest_id FROM groups WHERE group_name = ?', (group,)).fetchone()[0]) + 1
-      group_id = int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name = ?', (group,)).fetchone()[0])
+        group_id = int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name = ?', (group,)).fetchone()[0])
+        try:
+          article_id = int(self.sqlite.execute('SELECT article_id FROM articles WHERE message_id = ? AND group_id = ?', (message_id, group_id)).fetchone()[0])
+        except:
+          article_id = int(self.sqlite.execute('SELECT highest_id FROM groups WHERE group_name = ?', (group,)).fetchone()[0]) + 1
+          self.sqlite.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (message_id, group_id, article_id, int(time.time())))
+          self.sqlite.execute('UPDATE groups SET highest_id = ?, article_count = article_count + 1, last_update = ? WHERE group_id = ?', (article_id, int(time.time()), group_id))
+          self.sqlite_conn.commit()
       group_link = os.path.join(group_dir, str(article_id))
       os.symlink(article_link, group_link)
-      self.sqlite.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (message_id, group_id, article_id, int(time.time())))
-      self.sqlite.execute('UPDATE groups SET highest_id = ?, article_count = article_count + 1, last_update = ? WHERE group_id = ?', (article_id, int(time.time()), group_id))
-      self.sqlite_conn.commit()
       # whitelist
       for group_item in self.SRNd.hooks:
         if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
