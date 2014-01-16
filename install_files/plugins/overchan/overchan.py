@@ -665,11 +665,13 @@ class main(threading.Thread):
           # get hash for filename
           f = open(tmp_link, 'r')
           image_name_original = self.basicHTMLencode(part.get_filename())
+          # FIXME read line by line and use hasher.update(line)
           imagehash = sha1(f.read()).hexdigest()
           image_name = imagehash + '.' + image_name_original.split('.')[-1].lower()
           out_link = os.path.join(self.output_directory, 'img', image_name)
           f.close()
           # copy to out directory with new filename
+          # FIXME use os.rename() for the sake of good
           c = open(out_link, 'w')
           f = open(tmp_link, 'r')
           c.write(f.read())
@@ -677,7 +679,7 @@ class main(threading.Thread):
           f.close()
           if image_name_original.split('.')[-1].lower() == 'gif':
             # copy to thumb directory with new filename
-            # TODO: use relative link instead
+            # FIXME: use relative link instead
             thumb_link = os.path.join(self.output_directory, 'thumbs', image_name)
             thumb_name = image_name
             c = open(thumb_link, 'w')
@@ -755,7 +757,9 @@ class main(threading.Thread):
     return True
 
   def generate_board(self, group_id):
-    full_board_name = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0]
+    full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
+    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
+    full_board_name = self.basicHTMLencode(full_board_name_unquoted)
     board_name = full_board_name.split('.', 1)[1]
     threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, 10*10)).fetchone()[0])
     pages = int(threads / 10)
@@ -779,23 +783,25 @@ class main(threading.Thread):
         pagelist = list()
         for page in xrange(1, pages + 1):
           if page != page_counter:
-            pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(self.basicHTMLencode(board_name), page))
+            pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name, page))
           else:
             pagelist.append('[{0}]&nbsp;'.format(page))
         board_template = board_template.replace('%%pagelist%%', ''.join(pagelist))
         del pagelist
         boardlist = list()
         for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups ORDER by group_name ASC').fetchall():
+          current_group_name = self.basicHTMLencode(group_row[0].split('.', 1)[1].replace('"', '').replace('/', ''))
           if group_row[1] != group_id:
-            boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(self.basicHTMLencode(group_row[0].split('.', 1)[1])))
+            boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(current_group_name))
           else:
-            boardlist.append('&nbsp;' + self.basicHTMLencode(group_row[0].split('.', 1)[1]) + '&nbsp;|')
+            boardlist.append('&nbsp;' + current_group_name + '&nbsp;|')
         boardlist[-1] = boardlist[-1][:-1]
         board_template = board_template.replace('%%boardlist%%', ''.join(boardlist))
-        board_template = board_template.replace('%%board%%', full_board_name)
+        board_template = board_template.replace('%%full_board%%', full_board_name_unquoted)
+        board_template = board_template.replace('%%board%%', board_name)
         board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name))
         del boardlist
-        f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name, page_counter)), 'w', 'UTF-8')
+        f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
         f.write(board_template)
         f.close()
         threads = list()
@@ -923,15 +929,17 @@ class main(threading.Thread):
       board_template = board_template.replace('%%pagelist%%', ''.join(pagelist))
       boardlist = list()
       for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups ORDER by group_name ASC').fetchall():
+        current_group_name = self.basicHTMLencode(group_row[0].split('.', 1)[1].replace('"', '').replace('/', ''))
         if group_row[1] != group_id:
-          boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(self.basicHTMLencode(group_row[0].split('.', 1)[1])))
+          boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(current_group_name))
         else:
-          boardlist.append('&nbsp;' + self.basicHTMLencode(group_row[0].split('.', 1)[1]) + '&nbsp;|')
+          boardlist.append('&nbsp;' + current_group_name + '&nbsp;|')
       boardlist[-1] = boardlist[-1][:-1]
       board_template = board_template.replace('%%boardlist%%', ''.join(boardlist))
-      board_template = board_template.replace('%%board%%', full_board_name)
+      board_template = board_template.replace('%%full_board%%', full_board_name_unquoted)
+      board_template = board_template.replace('%%board%%', board_name)
       board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name))
-      f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name, page_counter)), 'w', 'UTF-8')
+      f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
       f.write(board_template)
       f.close()
       del pagelist
@@ -1030,17 +1038,18 @@ class main(threading.Thread):
     threadsTemplate = threadsTemplate.replace('%%message_childs%%', ''.join(childs))
     boardlist = list()
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups ORDER by group_name ASC').fetchall():
-      boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(self.basicHTMLencode(group_row[0].split('.', 1)[1])))
+      boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(self.basicHTMLencode(group_row[0].split('.', 1)[1].replace('"', '').replace('/', ''))))
       if group_row[1] == root_row[8]:
-        group_name = group_row[0]
+        full_group_name_unquoted = group_row[0].replace('"', '').replace('/', '')
+        full_group_name = self.basicHTMLencode(full_group_name_unquoted)
     boardlist[-1] = boardlist[-1][:-1]
     threadSingle = self.template_thread_single.replace('%%help%%', self.template_help)
     threadSingle = threadSingle.replace('%%title%%', self.html_title)
     threadSingle = threadSingle.replace('%%boardlist%%', ''.join(boardlist))
     threadSingle = threadSingle.replace('%%thread_id%%', root_message_id_hash)
-    # FIXME group_name may contain " and thus allow html code injection, if encoded postman won't recognize so change must be at both sides
-    threadSingle = threadSingle.replace('%%board%%', group_name)
-    threadSingle = threadSingle.replace('%%target%%', "{0}-1.html".format(group_name.split('.', 1)[1]))
+    threadSingle = threadSingle.replace('%%board%%', full_group_name.split('.', 1)[1])
+    threadSingle = threadSingle.replace('%%full_board%%', full_group_name_unquoted)
+    threadSingle = threadSingle.replace('%%target%%', "{0}-1.html".format(full_group_name.split('.', 1)[1]))
     threadSingle = threadSingle.replace('%%thread_single%%', threadsTemplate)
     f = codecs.open(os.path.join(self.output_directory, 'thread-{0}.html'.format(root_message_id_hash[:10])), 'w', 'UTF-8')
     f.write(threadSingle)
