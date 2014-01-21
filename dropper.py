@@ -177,13 +177,19 @@ class dropper(threading.Thread):
       article_link = '../../' + link
       group_dir = os.path.join('groups', group)
       if not os.path.exists(group_dir):
+        # FIXME don't rely on exists(group_dir) if directory is out of sync with database
+        # TODO try to read article_id as well
         article_id = 1
-        self.sqlite.execute('INSERT INTO groups VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (None, group, 1, 0, 0, 'y', int(time.time()), int(time.time())))
-        self.sqlite.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (message_id, group_id, article_id, int(time.time())))
+        try:self.sqlite.execute('INSERT INTO groups VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (None, group, 1, 1, 0, 'y', int(time.time()), int(time.time())))
+        except: pass
+        group_id = int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name = ?', (group,)).fetchone()[0])
+        try: self.sqlite.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (message_id, group_id, article_id, int(time.time())))
+        except: pass
         self.sqlite_conn.commit()
         if self.debug > 3: print "[dropper] creating directory", group_dir
         os.mkdir(group_dir)
       else:
+        # FIXME don't rely on exists(group_dir) if directory is out of sync with database
         group_id = int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name = ?', (group,)).fetchone()[0])
         try:
           article_id = int(self.sqlite.execute('SELECT article_id FROM articles WHERE message_id = ? AND group_id = ?', (message_id, group_id)).fetchone()[0])
@@ -233,6 +239,7 @@ class dropper(threading.Thread):
         print "[dropper] unknown hook detected. wtf? {0}".format(hook)
 
   def run(self):
+    # only called from the outside via handler_progress_incoming()
     self.running = True
     self.busy = False
     self.retry = False
