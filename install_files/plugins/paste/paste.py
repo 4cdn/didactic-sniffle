@@ -145,8 +145,11 @@ class main(threading.Thread):
       i.close()
       self.handle_new(None, None)
 
-  def add_article(self, message_id):
-    self.queue.put(message_id)
+  def add_article(self, message_id, source=None, timestamp=None):
+    if not source:
+      self.queue.put(message_id)
+    else:
+      self.log("WARNING, got an article with unknown source: '%s'. ignoring %s" % (source, message_id), 0)
 
   def shutdown(self):
     self.running = False

@@ -1,0 +1,80 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
+   "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <title>%%title%% - overview</title>
+    <link rel="stylesheet" type="text/css" href="styles.css" />
+    <style type="text/css">
+      .news {
+        border: 1px solid #3b3b3b;
+        background: #141414;
+        margin: 10px 20px 10px 20px;
+      }
+      .news .header {
+        background: #1c1c1c;
+        font-style: italic;
+        padding: 3px 5px 0px 5px;
+        text-align: right;
+        border-bottom: 1px dotted #3b3b3b;
+      }
+      .news .header .topicline b {
+        font-style: normal;
+        float: left;
+      }
+      .news .message_span {
+        padding: 10px 5px 0px 5px;
+      }
+      .news .footer {
+        text-align: right;
+        font-style: italic;
+        padding: 0px 5px 5px;
+      }
+      .activity {
+        padding: 10px 20px;
+        #background: #AAAAAA;
+      }
+      .activity td, .activity th {
+        vertical-align: top;
+        white-space: nowrap;
+      }
+      .post_td {
+        width: 100%;
+        padding: 0px 10px;
+      }
+      .post_td td {
+        text-align: right;
+      }
+      .post_td .subject {
+        text-align: left;
+        white-space: normal;
+        padding-left: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="boards">[%%boardlist%%]</div>
+    <hr />
+    <div class="sitetitle">
+      <h2>%%title%%</h2>
+      <b>decentralized and distributed</b>
+    </div>
+    <div class="news">
+      <div class="header"><div class="topicline"><b>%%subject%%</b>%%sent%% UTC</div><input type="checkbox" class="sig_chk" id="sign%%articlehash%%"><span class="sig_key">%%pubkey%%</span>&nbsp;<label title="signed message, click to show full public key" class="sig_label" for="sign%%articlehash%%">%%pubkey_short%%</label></div>
+      <div class="message_span">%%message%%</div>
+      <div class="footer"><a href="thread-%%parent%%.html#%%postid%%">comment</a>&nbsp;<a href="news.1.html">show all news</a></div>
+    </div>
+    <table class="activity" cellspacing="0" cellpadding="0" border="0" width="100%">
+      <tr>
+        <td class="usage_td">
+%%stats_usage%%
+        </td>
+        <td class="post_td" align="center">
+%%latest_posts%%
+        </td>
+        <td class="board_td">
+%%stats_boards%%
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

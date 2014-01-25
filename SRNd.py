@@ -111,6 +111,7 @@ class SRNd(threading.Thread):
         os.path.join('incoming', 'tmp'),
         'articles',
         os.path.join('articles', 'censored'),
+        os.path.join('articles', 'restored'),
         os.path.join('articles', 'invalid'),
         os.path.join('articles', 'duplicate'),
         'groups',

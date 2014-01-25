@@ -122,7 +122,7 @@ class main(threading.Thread):
     if 'sync_on_startup' in args:
       if args['sync_on_startup'].lower() == 'true':
         self.sync_on_startup = True
-    # TODO use tuple instead and load in above loop
+    # TODO use tuple instead and load in above loop. seriously.
     f = open(os.path.join(self.template_directory, 'board.tmpl'))
     self.template_board = f.read()
     f.close()
@@ -146,6 +146,27 @@ class main(threading.Thread):
     f.close()
     f = open(os.path.join(self.template_directory, 'help.tmpl'))
     self.template_help = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'overview.tmpl'))
+    self.template_overview = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'stats_usage.tmpl'))
+    self.template_stats_usage = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'stats_usage_row.tmpl'))
+    self.template_stats_usage_row = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'latest_posts.tmpl'))
+    self.template_latest_posts = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'latest_posts_row.tmpl'))
+    self.template_latest_posts_row = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'stats_boards.tmpl'))
+    self.template_stats_boards = f.read()
+    f.close()
+    f = open(os.path.join(self.template_directory, 'stats_boards_row.tmpl'))
+    self.template_stats_boards_row = f.read()
     f.close()
     
     self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
@@ -282,42 +303,91 @@ class main(threading.Thread):
     self.db_hasher = self.sqlite_hasher_conn.cursor() 
     self.sqlite_conn = sqlite3.connect(os.path.join(self.database_directory, 'overchan.db3'))
     self.sqlite = self.sqlite_conn.cursor()
+    # FIXME use config table with current db version + def update_db(db_version) like in censor plugin
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS groups
                (group_id INTEGER PRIMARY KEY AUTOINCREMENT, group_name text UNIQUE, article_count INTEGER, last_update INTEGER)''')
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS articles
                (article_uid text, group_id INTEGER, sender text, email text, subject text, sent INTEGER, parent text, message text, imagename text, imagelink text, thumblink text, last_update INTEGER, public_key text, PRIMARY KEY (article_uid, group_id))''')
+    
+    # TODO add some flag like ability to carry different data for groups like (removed + added manually + public + hidden + whatever)
+    #self.sqlite.execute('''CREATE TABLE IF NOT EXISTS flags
+    #           (flag_id INTEGER PRIMARY KEY AUTOINCREMENT, flag_name text UNIQUE, flag text)''')
+    #try:
+    #  self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ('removed', str(0b1)))
+    #except:
+    #  pass
     try:
       self.sqlite.execute('ALTER TABLE articles ADD COLUMN public_key text')
     except:
       pass
+    try:
+      self.sqlite.execute('ALTER TABLE articles ADD COLUMN received INTEGER DEFAULT 0')
+    except:
+      pass
+    try:
+      self.sqlite.execute('ALTER TABLE groups ADD COLUMN blocked INTEGER DEFAULT 0')
+    except:
+      pass
     self.sqlite_conn.commit()
-    #self.sqlite_hashes_conn = sqlite3.connect('hashes.db3')
-    #self.sqlite_hashes = self.sqlite_hashes_conn.cursor()
-    # regenerate all boards and threads - START
-    for group_row in self.sqlite.execute('SELECT group_id FROM groups').fetchall():
+    
+    # FIXME add as startup_var
+    self.regenerate_html_on_startup = True
+    if self.regenerate_html_on_startup:
+      self.regenerate_all_html()
+
+  def regenerate_all_html(self):
+    for group_row in self.sqlite.execute('SELECT group_id FROM groups WHERE blocked != 1').fetchall():
       if group_row[0] not in self.regenerate_boards:
         self.regenerate_boards.append(group_row[0])
     for thread_row in self.sqlite.execute('SELECT article_uid FROM articles WHERE parent = "" OR parent = article_uid ORDER BY last_update DESC').fetchall():
       if thread_row[0] not in self.regenerate_threads:
         self.regenerate_threads.append(thread_row[0])
-    # regenerate all boards and threads - END
 
   def shutdown(self):
     self.running = False
 
-  def add_article(self, message_id, source="article"):
-    self.queue.put((source, message_id))
+  def add_article(self, message_id, source="article", timestamp=None):
+    self.queue.put((source, message_id, timestamp))
     
-  def handle_control(self, lines):
+  def handle_control(self, lines, timestamp):
+    # FIXME how should board-add and board-del react on timestamps in the past / future
     self.log("got control message: %s" % lines, 5)
     root_posts = list()
     for line in lines.split("\n"):
-      if line.lower().startswith("overchan-delete-attachment "):
+      if line.lower().startswith('overchan-board-add'):
+        group_name = line.lower().split(" ")[1]
+        if '/' in group_name:
+          self.log("got overchan-board-add with invalid group name: '%s', ignoring" % group_name, 0)
+          continue
+        try:
+          self.sqlite.execute('UPDATE groups SET blocked = 0 WHERE group_name = ?', (group_name,))
+          self.log("unblocked existing board: '%s'" % group_name, 1)
+        except:
+          self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group_name, 0, int(time.time())))
+          self.log("added new board: '%s'" % group_name, 1)
+        self.sqlite_conn.commit()
+        self.regenerate_all_html()
+      elif line.lower().startswith("overchan-board-del"):
+        group_name = line.lower().split(" ")[1]
+        try:
+          self.sqlite.execute('UPDATE groups SET blocked = 1 WHERE group_name = ?', (group_name,))
+          self.log("blocked board: '%s'" % group_name, 1)
+          self.sqlite_conn.commit()
+          self.regenerate_all_html()
+        except:
+          self.log("should delete board %s but there is no board with that name" % group_name, 2)
+      elif line.lower().startswith("overchan-delete-attachment "):
         message_id = line.lower().split(" ")[1]
-        row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
+        row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id, received FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
           self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 3)
         else:
+          if row[4] > timestamp:
+            self.log("post more recent than control message. ignoring delete-attachment for %s" % message_id, 2)
+            continue
+          if row[0] == 'invalid':
+            self.log("attachment already deleted. ignoring delete-attachment for %s" % message_id, 4)
+            continue
           self.log("deleting attachments for message_id %s" % message_id, 2)
           if row[3] not in self.regenerate_boards:
             self.regenerate_boards.append(row[3])
@@ -343,10 +413,16 @@ class main(threading.Thread):
           self.sqlite_conn.commit()
       elif line.lower().startswith("delete "):
         message_id = line.lower().split(" ")[1]
-        row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
+        row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id, received FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
           self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 3)
         else:
+          if row[4] > timestamp:
+            self.log("post more recent than control message. ignoring delete for %s" % message_id, 2)
+            continue
+          if row[0] == 'invalid':
+            self.log("message already deleted/censored. ignoring delete for %s" % message_id, 4)
+            continue
           self.log("deleting message_id %s" % message_id, 2)
           if row[3] not in self.regenerate_boards:
             self.regenerate_boards.append(row[3])
@@ -434,7 +510,7 @@ class main(threading.Thread):
         ret = self.queue.get(block=True, timeout=1)
         if ret[0] == "article":
           message_id = ret[1]
-          if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (message_id,)).fetchone():
+          if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ? AND imagelink != "invalid"', (message_id,)).fetchone():
             self.log("run: {0} already in database..".format(message_id), 4)
             continue
           #message_id = self.queue.get(block=True, timeout=1)
@@ -451,7 +527,7 @@ class main(threading.Thread):
             except:
               pass
         elif ret[0] == "control":
-          self.handle_control(ret[1])
+          self.handle_control(ret[1], ret[2])
         else:
           self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
       except Queue.Empty as e:
@@ -463,6 +539,7 @@ class main(threading.Thread):
           for thread in self.regenerate_threads:
             self.generate_thread(thread)
           self.regenerate_threads = list()
+          self.generate_overview()
     self.sqlite_conn.close()
     self.sqlite_hasher_conn.close()
     self.log('bye', 2)
@@ -576,13 +653,21 @@ class main(threading.Thread):
           public_key = ''
     group_ids = list()
     for group in groups:
-      result = self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=?', (group,)).fetchone()
+      result = self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=? AND blocked = 0', (group,)).fetchone()
       if not result:
-        self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
-        self.sqlite_conn.commit()
+        try:
+          self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
+          self.sqlite_conn.commit()
+        except:
+          self.log('ignoring message for blocked group %s' % group, 2)
+          continue
+        self.regenerate_all_html()
         group_ids.append(int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=?', (group,)).fetchone()[0]))
       else:
         group_ids.append(int(result[0]))
+    if len(group_ids) == 0:
+      self.log('no groups left which are not blocked. ignoring %s' % message_id, 2)
+      return False
     for group_id in group_ids:
       if group_id not in self.regenerate_boards:
         self.regenerate_boards.append(group_id)
@@ -750,16 +835,21 @@ class main(threading.Thread):
         message += '----' + result.get_content_type() + '----\n\n'
     del result
     message = self.basicHTMLencode(message)
+    if self.sqlite.execute('SELECT article_uid FROM articles WHERE article_uid=?', (message_id,)).fetchone():
+      # post has been censored and is now being restored. just delete post for all groups so it can be reinserted
+      self.log('post has been censored and is now being restored: %s' % message_id, 2) 
+      self.sqlite.execute('DELETE FROM articles WHERE article_uid=?', (message_id,))
+      self.sqlite_conn.commit()
     for group_id in group_ids:
-      self.sqlite.execute('INSERT INTO articles(article_uid, group_id, sender, email, subject, sent, parent, message, imagename, imagelink, thumblink, last_update, public_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', (message_id, group_id, sender.decode('UTF-8'), email.decode('UTF-8'), subject.decode('UTF-8'), sent, parent, message.decode('UTF-8'), image_name_original.decode('UTF-8'), image_name, thumb_name, last_update, public_key))
+      self.sqlite.execute('INSERT INTO articles(article_uid, group_id, sender, email, subject, sent, parent, message, imagename, imagelink, thumblink, last_update, public_key, received) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (message_id, group_id, sender.decode('UTF-8'), email.decode('UTF-8'), subject.decode('UTF-8'), sent, parent, message.decode('UTF-8'), image_name_original.decode('UTF-8'), image_name, thumb_name, last_update, public_key, int(time.time())))
       self.sqlite.execute('UPDATE groups SET last_update=?, article_count = (SELECT count(article_uid) FROM articles WHERE group_id = ?) WHERE group_id = ?', (int(time.time()), group_id, group_id))
     self.sqlite_conn.commit()
     return True
 
   def generate_board(self, group_id):
     full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
-    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
     full_board_name = self.basicHTMLencode(full_board_name_unquoted)
+    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
     board_name = full_board_name.split('.', 1)[1]
     threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, 10*10)).fetchone()[0])
     pages = int(threads / 10)
@@ -776,30 +866,31 @@ class main(threading.Thread):
       #  self.log('message hash for {0} not found. wtf?'.format(root_row[0]), 0)
       #  continue
       if thread_counter == 10:
-        self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name, page_counter), 2)
+        self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name_unquoted, page_counter), 2)
         board_template = self.template_board.replace('%%help%%', self.template_help)
         board_template = board_template.replace('%%title%%', self.html_title)
         board_template = board_template.replace('%%threads%%', ''.join(threads))
         pagelist = list()
         for page in xrange(1, pages + 1):
           if page != page_counter:
-            pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name, page))
+            pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
           else:
             pagelist.append('[{0}]&nbsp;'.format(page))
         board_template = board_template.replace('%%pagelist%%', ''.join(pagelist))
         del pagelist
         boardlist = list()
-        for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups ORDER by group_name ASC').fetchall():
-          current_group_name = self.basicHTMLencode(group_row[0].split('.', 1)[1].replace('"', '').replace('/', ''))
+        for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+          current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+          current_group_name_encoded = self.basicHTMLencode(current_group_name)
           if group_row[1] != group_id:
-            boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(current_group_name))
+            boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
           else:
-            boardlist.append('&nbsp;' + current_group_name + '&nbsp;|')
+            boardlist.append('&nbsp;' + current_group_name_encoded + '&nbsp;|')
         boardlist[-1] = boardlist[-1][:-1]
         board_template = board_template.replace('%%boardlist%%', ''.join(boardlist))
         board_template = board_template.replace('%%full_board%%', full_board_name_unquoted)
         board_template = board_template.replace('%%board%%', board_name)
-        board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name))
+        board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name_unquoted))
         del boardlist
         f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
         f.write(board_template)
@@ -915,7 +1006,7 @@ class main(threading.Thread):
       threads.append(threadsTemplate)
       del childs
     if thread_counter > 0 or (page_counter == 1 and thread_counter == 0):
-      self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name, page_counter), 2)
+      self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name_unquoted, page_counter), 2)
       board_template = self.template_board.replace('%%help%%', self.template_help)
       # FIXME: put threads on the end
       board_template = board_template.replace('%%title%%', self.html_title)
@@ -923,22 +1014,23 @@ class main(threading.Thread):
       pagelist = list()
       for page in xrange(1, pages + 1):
         if page != page_counter:
-          pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name, page))
+          pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
         else:
           pagelist.append('[{0}]&nbsp;'.format(page))
       board_template = board_template.replace('%%pagelist%%', ''.join(pagelist))
       boardlist = list()
-      for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups ORDER by group_name ASC').fetchall():
-        current_group_name = self.basicHTMLencode(group_row[0].split('.', 1)[1].replace('"', '').replace('/', ''))
+      for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+        current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+        current_group_name_encoded = self.basicHTMLencode(current_group_name)
         if group_row[1] != group_id:
-          boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(current_group_name))
+          boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
         else:
-          boardlist.append('&nbsp;' + current_group_name + '&nbsp;|')
+          boardlist.append('&nbsp;' + current_group_name_encoded + '&nbsp;|')
       boardlist[-1] = boardlist[-1][:-1]
       board_template = board_template.replace('%%boardlist%%', ''.join(boardlist))
       board_template = board_template.replace('%%full_board%%', full_board_name_unquoted)
       board_template = board_template.replace('%%board%%', board_name)
-      board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name))
+      board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name_unquoted))
       f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
       f.write(board_template)
       f.close()
@@ -952,6 +1044,15 @@ class main(threading.Thread):
       self.log('error: root post not yet available: {0}'.format(root_uid), 1)
       return
     root_message_id_hash = sha1(root_uid).hexdigest() #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
+    if self.sqlite.execute('SELECT group_id FROM groups WHERE group_id = ? AND blocked = 1', (root_row[8],)).fetchone():
+      path = os.path.join(self.output_directory, 'thread-%s.html' % root_message_id_hash[:10])
+      if os.path.isfile(path):
+        self.log('this thread belongs to some blocked board. deleting %s.' % path, 2)
+        try:
+          os.unlink(path)
+        except Exception as e:
+          self.log('ERROR: could not delete %s: %s' % (path, e), 0)
+      return
     #if hash_result:
     #  root_message_id_hash = hash_result[0]
     #else:
@@ -1037,8 +1138,10 @@ class main(threading.Thread):
     threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
     threadsTemplate = threadsTemplate.replace('%%message_childs%%', ''.join(childs))
     boardlist = list()
-    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups ORDER by group_name ASC').fetchall():
-      boardlist.append('&nbsp;<a href="{0}-1.html">{0}</a>&nbsp;|'.format(self.basicHTMLencode(group_row[0].split('.', 1)[1].replace('"', '').replace('/', ''))))
+    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+      current_group_name_encoded = self.basicHTMLencode(current_group_name)
+      boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
       if group_row[1] == root_row[8]:
         full_group_name_unquoted = group_row[0].replace('"', '').replace('/', '')
         full_group_name = self.basicHTMLencode(full_group_name_unquoted)
@@ -1056,6 +1159,111 @@ class main(threading.Thread):
     f.close()
     del childs
     del boardlist
+    
+  def generate_overview(self):
+    self.log("generating {0}/overview.html".format(self.output_directory), 2)
+    overview = self.template_overview
+    overview = overview.replace('%%title%%', self.html_title)
+    boardlist = list()
+    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+      current_group_name_encoded = self.basicHTMLencode(current_group_name)
+      boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
+    boardlist[-1] = boardlist[-1][:-1]
+    overview = overview.replace('%%boardlist%%', ''.join(boardlist))
+    news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'
+    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent FROM articles WHERE article_uid = ?', (news_uid, )).fetchone()
+    
+    overview = overview.replace('%%subject%%', row[0])
+    overview = overview.replace('%%sent%%', datetime.utcfromtimestamp(row[2]).strftime('%Y/%m/%d %H:%M'))
+    overview = overview.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(row[3]))
+    overview = overview.replace('%%pubkey%%', row[3])
+    postid = sha1(news_uid).hexdigest()[:10]
+    if row[4] == '' or row[4] == news_uid:
+      parent = postid
+    else:
+      parent = sha1(row[4]).hexdigest()[:10]
+    overview = overview.replace('%%postid%%', postid)
+    overview = overview.replace('%%parent%%', parent)
+    if len(row[1].split('\n')) > 5:
+      message = '\n'.join(row[1].split('\n')[:5]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
+    elif len(row[1]) > 1000:
+      message = row[1][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
+    else:
+      message = row[1]
+    overview = overview.replace('%%message%%', message)
+    
+    weekdays = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
+    max = 0
+    stats = list()
+    bar_length = 20
+    days = 21
+    totals = int(self.sqlite.execute('SELECT count(1) FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days")').fetchone()[0])
+    stats.append(self.template_stats_usage_row.replace('%%postcount%%', str(totals)).replace('%%date%%', 'all posts').replace('%%weekday%%', '').replace('%%bar%%', 'since %s days' % days))
+    for row in self.sqlite.execute('SELECT count(1) as counter, strftime("%Y-%m-%d",  sent, "unixepoch") as day, strftime("%w", sent, "unixepoch") as weekday FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days") GROUP BY day ORDER BY day DESC').fetchall():
+      if row[0] > max:
+        max = row[0]
+      stats.append((row[0], row[1], weekdays[int(row[2])]))
+    for index in range(1, len(stats)):
+      graph = ''
+      for x in range(0, int(float(stats[index][0])/max*bar_length)):
+        graph += '='
+      if len(graph) == 0:
+        graph = '&nbsp;'
+      stats[index] = self.template_stats_usage_row.replace('%%postcount%%', str(stats[index][0])).replace('%%date%%', stats[index][1]).replace('%%weekday%%', stats[index][2]).replace('%%bar%%', graph)
+    overview_stats_usage = self.template_stats_usage
+    overview_stats_usage = overview_stats_usage.replace('%%stats_usage_rows%%', ''.join(stats))
+    overview = overview.replace('%%stats_usage%%', overview_stats_usage)
+    del stats[:]
+
+    postcount = 23
+    for row in self.sqlite.execute('SELECT sent, group_name, sender, subject, article_uid, parent FROM articles, groups WHERE groups.blocked = 0 AND articles.group_id = groups.group_id ORDER BY sent DESC LIMIT ' + str(postcount)).fetchall():
+      sent = datetime.utcfromtimestamp(row[0]).strftime('%Y/%m/%d %H:%M UTC')
+      board = self.basicHTMLencode(row[1].replace('"', '')).split('.', 1)[1]
+      author = row[2]
+      articlehash = sha1(row[4]).hexdigest()[:10]
+      if row[5] == '' or row[5] == row[4]:
+        # root post
+        subject = row[3]
+        parent = articlehash
+      else:
+        parent = sha1(row[5]).hexdigest()[:10]
+        try:
+          subject = self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (row[5],)).fetchone()[0] 
+        except:
+          subject = 'root post not yet available'
+      if len(subject) > 60:
+        subject = subject[:60] + ' [..]'
+      if len(author) > 20:
+        author = author[:20] + ' [..]'
+      stats.append(self.template_latest_posts_row.replace('%%sent%%', sent).replace('%%board%%', board).replace('%%parent%%', parent).replace('%%articlehash%%', articlehash).replace('%%author%%', author).replace('%%subject%%', subject))
+    #for row in self.sqlite.execute('SELECT articles.last_update, group_name, sender, subject, article_uid FROM articles, groups WHERE (parent = "" or parent = article_uid) AND articles.group_id = groups.group_id ORDER BY articles.last_update DESC LIMIT ' + str(postcount)).fetchall():
+    #  last_update = datetime.utcfromtimestamp(row[0]).strftime('%Y/%m/%d %H:%M UTC')
+    #  board = self.basicHTMLencode(row[1].replace('"', '')).split('.', 1)[1]
+    #  subject = row[3]
+    #  parent = sha1(row[4]).hexdigest()[:10]
+    #  try:
+    #    childrow = self.sqlite.execute('SELECT sender, article_uid FROM articles WHERE parent = ? ORDER BY sent DESC LIMIT 1', (row[4],)).fetchone()
+    #    articlehash = sha1(childrow[1]).hexdigest()[:10]
+    #    author = childrow[0]
+    #  except:
+    #    articlehash = parent
+    #    author = row[2]
+    #  stats.append(self.template_latest_posts_row.replace('%%sent%%', last_update).replace('%%board%%', board).replace('%%parent%%', parent).replace('%%articlehash%%', articlehash).replace('%%author%%', author).replace('%%subject%%', subject))
+    overview_latest_posts = self.template_latest_posts
+    overview_latest_posts = overview_latest_posts.replace('%%latest_posts_rows%%', ''.join(stats))
+    overview = overview.replace('%%latest_posts%%', overview_latest_posts)
+    del stats[:]
+
+    for row in self.sqlite.execute('SELECT count(1) as counter, group_name FROM articles, groups WHERE groups.blocked = 0 AND articles.group_id = groups.group_id GROUP BY articles.group_id ORDER BY counter DESC').fetchall():
+      stats.append(self.template_stats_boards_row.replace('%%postcount%%', str(row[0])).replace('%%board%%', self.basicHTMLencode(row[1])))
+    overview_stats_boards = self.template_stats_boards
+    overview_stats_boards = overview_stats_boards.replace('%%stats_boards_rows%%', ''.join(stats))
+    overview = overview.replace('%%stats_boards%%', overview_stats_boards)
+    
+    f = codecs.open(os.path.join(self.output_directory, 'overview.html'), 'w', 'UTF-8')
+    f.write(overview)
+    f.close()
 
 if __name__ == '__main__':
   # FIXME fix this shit

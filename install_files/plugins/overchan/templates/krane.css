@@ -1,13 +1,13 @@
- body {
+      body {
         margin: 0px;
         background: #101010 !important;
         font-family: arial,helvetica,sans-serif;
         color:#ffffff !important;
         font-size: 10pt;
       }
-      table {
-        font-size: 10pt;
-      }
+      //table {
+      //  font-size: 10pt;
+      //}
       a {
         color: #f7acb1 !important;
       }
@@ -17,6 +17,18 @@
         height: 0px !important;
         border-top: 1px solid !important;
         border-bottom: none !important;
+      }
+      .sitetitle {
+        text-align: center;
+        color: #ABABAB;
+        margin: 10px 20px 20px 20px;
+      }
+      .sitetitle h2 {
+        margin: 0px;
+      }
+      .sitetitle h2 a {
+        color: #ABABAB !important;
+        text-decoration: none;
       }
       .filedescription {
         font-style: italic;
@@ -189,4 +201,32 @@
         overflow: auto;
         white-space: pre;
         width: 80%;
+      }
+      .datatable {
+        background: #141414;
+        border: 1px solid #3B3B3B;
+        border-collapse: collapse;
+      }
+      .datatable th {
+        background: #1C1C1C;
+      }
+      .datatable td, .datatable th {
+        border: 1px dotted #3B3B3B;
+        padding: 1px 4px;
+        vertical-align: top;
+      }
+      .mod {
+        font-family: monospace !important;
+        font-size: 9pt !important;
+        margin: 20px 10px 10px;
+      }
+      .mod table {
+        border-collapse: collapse;
+        font-size: 9pt; //damn you chromium
+      }
+      .dontwrap {
+        white-space: nowrap;
+      }
+      .right {
+        text-align: right;
       }

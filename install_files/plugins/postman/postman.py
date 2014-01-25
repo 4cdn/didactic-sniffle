@@ -424,8 +424,8 @@ class main(threading.Thread):
   def shutdown(self):
     self.httpd.shutdown()
 
-  def add_article(self, message_id):
-    self.log('this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])), 0)
+  def add_article(self, message_id, source=None, timestamp=None):
+    self.log('WARNING, this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])), 0)
 
   def run(self):
     if self.should_terminate:

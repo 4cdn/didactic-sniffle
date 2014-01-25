@@ -16,6 +16,8 @@ import threading
 import sqlite3
 import socket
 import nacl.signing
+import codecs
+import re
 if __name__ == '__main__':
   import nntplib
 
@@ -48,23 +50,25 @@ class censor(BaseHTTPRequestHandler):
       if self.path[10:58] not in self.origin.sessions:
         self.send_login()
         return
-      if self.origin.sessions[self.path[10:58]][0] < int(time.time()):
+      self.session = self.path[10:58]
+      self.root_path = self.path[:58] + '/' 
+      if self.origin.sessions[self.session][0] < int(time.time()):
         self.send_login()
         return
-      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600 * 6
+      self.origin.sessions[self.session][0] = int(time.time()) + 3600 * 6
       path = self.path[58:]
       if path.startswith('/modify?'):
         key = path[8:]
-        flags_available = int(self.origin.sqlite_censor.execute("SELECT flags FROM keys WHERE key=?", (self.origin.sessions[self.path[10:58]][1],)).fetchone()[0])
+        flags_available = int(self.origin.sqlite_censor.execute("SELECT flags FROM keys WHERE key=?", (self.origin.sessions[self.session][1],)).fetchone()[0])
         flag_required = int(self.origin.sqlite_censor.execute('SELECT flag FROM commands WHERE command="srnd-acl-mod"').fetchone()[0])
         if (flags_available & flag_required) != flag_required:
-          self.send_redirect(self.path[:58] + "/", "not authorized, flag srnd-acl-mod flag missing.<br />redirecting you in a moment.", 7)
+          self.send_redirect(self.root_path, "not authorized, flag srnd-acl-mod flag missing.<br />redirecting you in a moment.", 7)
           return
         try:
           self.handle_update_key(key)
-          self.send_redirect(self.path[:58] + "/", "update ok<br />redirecting you in a moment.", 4)
+          self.send_redirect(self.root_path, "update ok<br />redirecting you in a moment.", 4)
         except Exception as e:
-          self.send_redirect(self.path[:58] + "/", "update failed: %s<br />redirecting you in a moment." % e, 10)
+          self.send_redirect(self.root_path, "update failed: %s<br />redirecting you in a moment." % e, 10)
       elif path == "/foo":
         self.die("POST bar")
       else:
@@ -87,10 +91,12 @@ class censor(BaseHTTPRequestHandler):
       if self.path[10:58] not in self.origin.sessions:
         self.send_login()
         return
-      if self.origin.sessions[self.path[10:58]][0] < int(time.time()):
+      self.session = self.path[10:58]
+      self.root_path = self.path[:58] + '/' 
+      if self.origin.sessions[self.session][0] < int(time.time()):
         self.send_login()
         return
-      self.origin.sessions[self.path[10:58]][0] = int(time.time()) + 3600 * 6
+      self.origin.sessions[self.session][0] = int(time.time()) + 3600 * 6
       path = self.path[58:]
       if path.startswith('/modify?'):
         key = path[8:]
@@ -99,6 +105,22 @@ class censor(BaseHTTPRequestHandler):
         self.send_piclog()
       elif path.startswith('/message_log') or path.startswith('/messagelog'):
         self.send_messagelog()
+      elif path.startswith('/stats'):
+        self.send_stats()
+      elif path.startswith('/settings'):
+        self.send_settings()
+      elif path.startswith('/showmessage?'):
+        self.send_message(path[13:])
+      elif path.startswith('/delete?'):
+        self.handle_delete(path[8:])
+      elif path.startswith('/restore?'):
+        self.handle_restore(path[9:])
+      elif path.startswith('/block_board?'):
+        self.handle_block_board(path[13:])
+      elif path.startswith('/unblock_board?'):
+        self.handle_unblock_board(path[15:])
+      elif path.startswith('/notimplementedyet'):
+        self.send_error('not implemented yet')
       elif path == "/foo":
         self.die("GET bar")
       else:
@@ -127,7 +149,7 @@ class censor(BaseHTTPRequestHandler):
       local_nick = ''
     for flag in flags:
       result += int(flag)
-    self.origin.censor.add_article((self.origin.sessions[self.path[10:58]][1], "srnd-acl-mod %s %i %s" % (key, result, local_nick)), "httpd")
+    self.origin.censor.add_article((self.origin.sessions[self.session][1], "srnd-acl-mod %s %i %s" % (key, result, local_nick)), "httpd")
 
   def check_login(self):
     current_date = int(time.time())
@@ -166,14 +188,14 @@ class censor(BaseHTTPRequestHandler):
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write('<html><head><META HTTP-EQUIV="Refresh" CONTENT="%i; URL=%s"></head><body style="font-family: arial,helvetica,sans-serif; font-size: 10pt;"><center><br />%s</center></body></html>' % (wait, target, message))
+    self.wfile.write('<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><META HTTP-EQUIV="Refresh" CONTENT="%i; URL=%s"></head><body class="mod"><center><br /><b>%s</b></center></body></html>' % (wait, target, message))
     return
 
   def send_login(self, message=""):
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write('<html><head></head><body><center>%s<br /><form action="/moderate?auth" enctype="multipart/form-data" method="POST"><label>your secret</label>&nbsp;<input type="text" name="secret" style="width: 400px;"/><input type="submit" /></form></html></html>' % message)
+    self.wfile.write('<html><head><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod"><center>%s<br /><form action="/moderate?auth" enctype="multipart/form-data" method="POST"><label>your secret</label>&nbsp;<input type="text" name="secret" style="width: 400px;"/><input type="submit" /></form></html></html>' % message)
 
   def send_modify_key(self, key):
     out = self.origin.template_modify_key
@@ -220,7 +242,7 @@ class censor(BaseHTTPRequestHandler):
 
   def send_log(self):
     out = self.origin.template_log
-    out = out.replace('%%navigation%%', '&nbsp;'.join(self.__get_navigation('moderation_log')))
+    out = out.replace('%%navigation%%', ''.join(self.__get_navigation('moderation_log')))
     table = list()    
     for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 1 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
       cur_template = self.origin.template_log_accepted
@@ -230,11 +252,38 @@ class censor(BaseHTTPRequestHandler):
         cur_template = cur_template.replace("%%key_or_nick%%", row[0])
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%action%%", row[2])
-      #parent = self.origin.sqlite_overchan.execute("SELECT parent FROM articles WHERE article_uid = ?", (row[3],)).fetchone()[0]
-      # TODO save parent in censor.db?
-      cur_template = cur_template.replace("%%postid%%", row[3].replace("<", "&lt;").replace(">", "&gt;"))
       cur_template = cur_template.replace("%%reason%%", row[4])
       cur_template = cur_template.replace("%%date%%", datetime.utcfromtimestamp(row[6]).strftime('%Y/%m/%d %H:%M'))
+      if row[2] != 'delete' and row[2] != 'overchan-delete-attachment':
+        cur_template = cur_template.replace("%%postid%%", row[3].replace("<", "&lt;").replace(">", "&gt;"))
+        cur_template = cur_template.replace("%%restore_link%%", '')
+        cur_template = cur_template.replace("%%delete_link%%", '')
+      else:
+        message_id = row[3].replace("<", "&lt;").replace(">", "&gt;")
+        try:
+          if os.stat(os.path.join('articles', 'censored', row[3])).st_size > 0:
+            cur_template = cur_template.replace("%%postid%%", '<a href="showmessage?%s" target="_blank">%s</a>' % (message_id, message_id))
+            if row[2] == 'delete' or row[2] == 'overchan-delete-attachment':
+              cur_template = cur_template.replace("%%restore_link%%", '<a href="restore?%s">restore</a>&nbsp;' % message_id)
+            else:
+              cur_template = cur_template.replace("%%restore_link%%", '')
+            cur_template = cur_template.replace("%%delete_link%%", '<a href="delete?%s">delete</a>&nbsp;' % message_id)
+          else:
+            cur_template = cur_template.replace("%%postid%%", message_id)
+            cur_template = cur_template.replace("%%restore_link%%", '')
+            cur_template = cur_template.replace("%%delete_link%%", '')
+        except:
+          if os.path.isfile(os.path.join('articles', row[3])):
+            cur_template = cur_template.replace("%%postid%%", message_id)
+            item_row = self.origin.sqlite_overchan.execute('SELECT parent FROM articles WHERE article_uid = ?', (row[3],)).fetchone()
+            if item_row:
+              if item_row[0] == '':
+                cur_template = cur_template.replace("%%restore_link%%", '<a href="/thread-%s.html" target="_blank">restored</a>&nbsp;' % sha1(row[3]).hexdigest()[:10])
+              else:
+                cur_template = cur_template.replace("%%restore_link%%", '<a href="/thread-%s.html#%s" target="_blank">restored</a>&nbsp;' % (sha1(item_row[0]).hexdigest()[:10], sha1(row[3]).hexdigest()[:10]))
+            else:
+              cur_template = cur_template.replace("%%restore_link%%", 'restored&nbsp;')
+            cur_template = cur_template.replace("%%delete_link%%", '')
       table.append(cur_template)
     out = out.replace("%%mod_accepted%%", "\n".join(table))
     del table[:]    
@@ -243,10 +292,17 @@ class censor(BaseHTTPRequestHandler):
       if row[1] != "":
         cur_template = cur_template.replace("%%key_or_nick%%", row[1])
       else:
-        cur_template = cur_template.replace("%%key_or_nick%%", row[0])
+        cur_template = cur_template.replace("%%key_or_nick%%", '%s[..]%s' % (row[0][:6], row[0][-6:]))
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%action%%", row[2])
-      cur_template = cur_template.replace("%%postid%%", row[3].replace("<", "&lt;").replace(">", "&gt;"))
+      message_id = row[3].replace("<", "&lt;").replace(">", "&gt;")
+      try:
+        if os.stat(os.path.join('articles', row[3])).st_size > 0:
+          cur_template = cur_template.replace("%%postid%%", '<a href="showmessage?%s" target="_blank">%s</a>' % (message_id, message_id))
+        else:
+          cur_template = cur_template.replace("%%postid%%", message_id)
+      except:
+        cur_template = cur_template.replace("%%postid%%", message_id)
       cur_template = cur_template.replace("%%reason%%", row[4])
       cur_template = cur_template.replace("%%date%%", datetime.utcfromtimestamp(row[6]).strftime('%Y/%m/%d %H:%M'))
       table.append(cur_template)
@@ -297,8 +353,9 @@ class censor(BaseHTTPRequestHandler):
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"></head><body style="margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt;">%%navigation%%'
-    out = out.replace("%%navigation%%", "&nbsp;".join(self.__get_navigation('pic_log')))
+    #out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%'
+    out = '<html><head><title>piclog</title><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod">%%navigation%%'
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('pic_log')))
     self.wfile.write(out)
     for row in self.origin.sqlite_overchan.execute('SELECT * FROM (SELECT thumblink, parent, article_uid, last_update, sent FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC) ORDER by sent DESC').fetchall():
       cur_template = '<a href="/%%target%%" target="_blank"><img src="%%thumblink%%" class="image" style="height: 200px;" /></a>\n'
@@ -308,13 +365,14 @@ class censor(BaseHTTPRequestHandler):
         target = 'thread-%s.html#%s' % (sha1(row[1]).hexdigest()[:10], sha1(row[2]).hexdigest()[:10])
       cur_template = cur_template.replace("%%target%%", target)
       cur_template = cur_template.replace("%%thumblink%%", '/thumbs/' + row[0])
-      self.wfile.write(cur_template)    
+      self.wfile.write(cur_template)
     self.wfile.write('</body></html>')
     
   def send_messagelog(self, page=0):
     table = list()
-    out = u'<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">table { font-size: 9pt;} td { vertical-align: top; } .dontwrap { white-space: nowrap; }</style></head><body style="margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt;">%%navigation%%%%content%%</body></html>'
-    out = out.replace("%%navigation%%", "&nbsp;".join(self.__get_navigation('message_log'))) 
+    #out = u'<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">table { font-size: 9pt;} td { vertical-align: top; } .dontwrap { white-space: nowrap; } body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%%%content%%</body></html>'
+    out = u'<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><title>messagelog</title><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod">%%navigation%%%%content%%</body></html>'
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('message_log'))) 
     #for row in self.origin.sqlite_overchan.execute('SELECT article_uid, parent, sender, subject, message, parent, public_key, sent, group_name FROM articles, groups WHERE groups.group_id = articles.group_id ORDER BY articles.sent DESC LIMIT ?,50', (50*page,)).fetchall():
     for row in self.origin.sqlite_overchan.execute('SELECT article_uid, parent, sender, subject, message, parent, public_key, sent, group_name FROM articles, groups WHERE groups.group_id = articles.group_id ORDER BY articles.sent DESC LIMIT ?,100', (0,)).fetchall():
       if row[1] == '' or row[1] == row[0]:
@@ -322,16 +380,157 @@ class censor(BaseHTTPRequestHandler):
         link = "thread-%s.html" % sha1(row[0]).hexdigest()[:10]
       else:
         link = "thread-%s.html#%s" % (sha1(row[1]).hexdigest()[:10], sha1(row[0]).hexdigest()[:10])
-      if len(row[4]) > 200:
-        message = row[4][:200] + "\n[..]"
-      else:
-        message = row[4]
-      table.append(u'<tr><td class="dontwrap">%s</td><td class="dontwrap">%s</td><td>%s</td><td><a href="/%s" target="_blank">%s</a></td><td class="message_span">%s</td></tr>' % (datetime.utcfromtimestamp(row[7]).strftime('%Y/%m/%d %H:%M'), row[8], row[2], link, row[3], message))
-    out = out.replace("%%content%%", '<table border="1"><tr><th>sent</th><th>board</th><th>sender</th><th>subject</th><th>message</th></tr>\n' + '\n'.join(table))
+      sender = row[2]
+      subject = row[3]
+      message = row[4]
+      if len(sender) > 15:
+        sender = sender[:15]+ ' [..]'
+      if len(subject) > 45:
+        subject = subject[:45] + ' [..]'
+      if len(message) > 200:
+        message = message[:200] + "\n[..]"
+      subject = self.origin.breaker.sub(self.__breakit, subject)
+      message = self.origin.breaker.sub(self.__breakit, message)
+      table.append(u'<tr><td class="dontwrap">%s</td><td class="dontwrap">%s</td><td>%s</td><td><a href="/%s" target="_blank">%s</a></td><td class="message_span">%s</td></tr>' % (datetime.utcfromtimestamp(row[7]).strftime('%Y/%m/%d %H:%M'), row[8], sender, link, subject, message))
+    out = out.replace("%%content%%", '<table class="datatable"><tr><th>sent</th><th>board</th><th>sender</th><th>subject</th><th>message</th></tr>\n' + '\n'.join(table))
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
     self.wfile.write(out.encode('UTF-8'))
+
+  def send_stats(self, page=0):
+    #out = u'<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">table { font-size: 9pt;} td { vertical-align: top; } .top2 { float: left; }.float { float: left; margin-right: 10px; margin-bottom: 10px; } .right { text-align: right; padding-right: 5px; } body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%%%content%%</body></html>'
+    out = u'<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><title>stats</title><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">.top2 { float: left; } .float { float: left; margin-right: 10px; margin-bottom: 10px; }</style></head><body class="mod">%%navigation%%%%content%%</body></html>'
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('stats')))
+    template_2_rows = '<tr><td class="right">%s</td><td>%s</td></tr>'
+    template_3_rows = '<tr><td>%s</td><td class="right">%s</td><td>%s</td></tr>'
+    template_4_rows = '<tr><td>%s</td><td class="right">%s</td><td>%s</td><td>%s</td></tr>'
+    out_table = list()
+
+    out_table.append('<div class="top1">')
+    #out_table.append('<table border="1" cellspacing="0" class="float">\n<tr><th>date</th><th>posts</th><th>frontend</th><th>&nbsp;</th></tr>')
+    #for item in self.__stats_usage_by_frontend(7, 30):
+    #  out_table.append(template_4_rows % item)
+    #out_table.append('</table>')
+    out_table.append('<div class="float">')
+    out_table.append('<table class="datatable">\n<tr><th>date</th><th>posts</th><th>&nbsp;</th></tr>')
+    for item in self.__stats_usage(31, 30):
+      out_table.append(template_3_rows % item)
+    out_table.append('</table>')
+    out_table.append('</div>')
+    out_table.append('<div class="float">')
+    out_table.append('<table class="datatable">\n<tr><th>posts</th><th>frontend</th></tr>')
+    for item in self.__stats_frontends():
+      out_table.append(template_2_rows % item)
+    out_table.append('</table>')
+    out_table.append('</div>')
+    out_table.append('<div class="float">')
+    out_table.append('<table class="datatable">\n<tr><th>posts</th><th>group</th></tr>')
+    for item in self.__stats_groups():
+      out_table.append(template_2_rows % item)
+    out_table.append('</table>')
+    out_table.append('</div>')
+    out_table.append('<div class="float">')
+    out_table.append('<table class="datatable">\n<tr><th>month</th><th>posts</th><th>&nbsp;</th></tr>')
+    for item in self.__stats_usage_month(30):
+      out_table.append(template_3_rows % item)
+    out_table.append('</table>')
+    out_table.append('</div>')
+    out_table.append('</div>')
+    
+    out_table.append('<div class="top2">')
+    out_table.append('<div class="float">')
+    out_table.append('<table class="datatable">\n<tr><th>weekday</th><th>posts</th><th>(last 28 days average)</th></tr>')
+    for item in self.__stats_usage_weekday(28):
+      out_table.append(template_3_rows % item)
+    out_table.append('</table>')
+    out_table.append('</div>')
+    out_table.append('<div class="float">')
+    out_table.append('<table class="datatable">\n<tr><th>weekday</th><th>posts</th><th>(totals)</th></tr>')
+    for item in self.__stats_usage_weekday():
+      out_table.append(template_3_rows % item)
+    out_table.append('</table>')
+    out_table.append('</div>')
+    out_table.append('</div>')
+    
+    out = out.replace('%%content%%', '\n'.join(out_table))
+    del out_table
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write(out.encode('UTF-8'))
+
+  def send_message(self, message_id):
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    #out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%<pre>'
+    out = '<html><head><title>view message</title><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod">%%navigation%%<pre>'
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('')))
+    self.wfile.write(out.encode('UTF-8'))
+
+    if os.path.isfile(os.path.join('articles', 'censored', message_id)):
+      f = codecs.open(os.path.join('articles', 'censored', message_id), 'r', 'UTF-8')
+      self.__write_nntp_article(f)
+    elif os.path.isfile(os.path.join('articles', message_id)):
+      f = codecs.open(os.path.join('articles', message_id), 'r', 'UTF-8')
+      self.__write_nntp_article(f)
+    else:
+      self.wfile.write('message_id \'%s\' not found' % message_id.replace('<', '&lt;').replace('>', '&gt;'))
+    self.wfile.write('</pre></body></html>')
+    
+  def send_settings(self):
+    #out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%<table class="datatable" id="groups" cellspacing="0" cellpadding="0"><tr><th>posts</th><th>board</th><th>&nbsp;</th></tr>%%boards%%</table></body></html>'
+    out = '<html><head><title>settings</title><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod">%%navigation%%<table class="datatable" id="groups"><tr><th>posts</th><th>board</th><th>&nbsp;</th></tr>%%boards%%</table></body></html>'
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('settings')))
+    template_unblocked = '<tr><td class="right">%s</td><td>%s</td><td><a href="block_board?%i">block</a></td></tr>'
+    template_blocked = '<tr><td class="right">%s</td><td>%s</td><td><a href="unblock_board?%i">unblock</a></td></tr>'
+    stats = list()
+    for item in self.__stats_groups(ids=True, status=True):
+      if item[3] == 0:
+        stats.append(template_unblocked % item[:3])
+      else:
+        stats.append(template_blocked % item[:3])
+    out = out.replace("%%boards%%", "\n".join(stats))
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write(out.encode('UTF-8'))
+    
+  def handle_delete(self, message_id):
+    path = os.path.join('articles', 'censored', message_id)
+    try:
+      if os.stat(path).st_size > 0:
+        f = open(path, 'w')
+        f.close()
+    except:
+      pass
+    self.send_redirect(self.root_path, "redirecting", 0)
+    
+  def handle_restore(self, message_id):
+    if os.path.isfile(os.path.join('articles', 'censored', message_id)):
+      os.rename(os.path.join('articles', 'censored', message_id), os.path.join('incoming', message_id + '_'))
+      f = open(os.path.join('articles', 'restored', message_id), 'w')
+      f.close()
+      self.send_redirect(self.root_path, "redirecting", 0)
+    else:
+      self.send_redirect(self.root_path, 'message_id does not exist in articles/censored', 5)
+
+  def handle_block_board(self, board_id):
+    try:
+      board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
+      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-del %s" % (board_name)), "httpd")
+      self.send_redirect(self.root_path + 'settings', "redirecting. it might take a second to synchronize.", 3)
+    except Exception as e:
+      self.send_redirect(self.root_path + 'settings', "could not block board: %s" % e, 10)
+
+  def handle_unblock_board(self, board_id):
+    try:
+      board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
+      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-add %s" % (board_name)), "httpd")
+      self.send_redirect(self.root_path + 'settings', "redirecting. it might take a second to synchronize.", 3)
+    except Exception as e:
+      self.send_redirect(self.root_path + 'settings', "could not unblock board: %s" % e, 10)
 
   def send_error(self, errormessage):
     self.send_response(200)
@@ -339,13 +538,143 @@ class censor(BaseHTTPRequestHandler):
     self.end_headers()
     self.wfile.write(errormessage)
 
+  def __write_nntp_article(self, f):
+    attachment = re.compile('^[cC]ontent-[tT]ype: ([a-zA-Z0-9/]+).*name="([^"]+)')
+    attachment_details = None
+    base64 = False
+    writing_base64 = False
+    for line in f:
+      if line.lower().startswith('content-type:'):
+        attachment_details = attachment.match(line)
+      elif line.lower().startswith('content-transfer-encoding: base64'):
+        base64 = True
+      if len(line) == 1:
+        if base64 == True and attachment_details != None:
+          self.wfile.write('\n<img src="data:%s;base64,' % attachment_details.group(1))
+          writing_base64 = True
+        else:
+          self.wfile.write(line)
+      elif writing_base64 and line.startswith('--'):
+        self.wfile.write('" title="%s" width="100%%" />\n' % attachment_details.group(2).replace('<', '&lt;').replace('>', '&gt;').encode('UTF-8'))
+        writing_base64 = False
+        base64 = False
+      elif writing_base64:
+        self.wfile.write(line.encode('UTF-8'))
+      else:
+        self.wfile.write(line.replace('<', '&lt;').replace('>', '&gt;').encode('UTF-8'))
+    f.close()
+    if writing_base64:
+      self.wfile.write('" title="%s" />\n' % attachment_details.group(2).replace('<', '&lt;').replace('>', '&gt;'))
+
+  def __stats_frontends(self):
+    hosts = list()
+    for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, rtrim(substr(article_uid, instr(article_uid, "@") + 1), ">") as hosts FROM articles GROUP by hosts ORDER BY counter DESC').fetchall():
+       hosts.append((row[0], row[1]))
+    return hosts
+
+  def __stats_groups(self, ids=False, status=False):
+    groups = list()
+    for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, group_name, groups.group_id, blocked FROM articles, groups WHERE articles.group_id = groups.group_id GROUP BY articles.group_id ORDER BY counter DESC').fetchall():
+      if ids and status:
+        groups.append((row[0], row[1], row[2], row[3]))
+      elif ids:
+        groups.append((row[0], row[1], row[2]))
+      elif status:
+        groups.append((row[0], row[1], row[3]))
+      else:
+        groups.append((row[0], row[1]))
+    return groups
+
+  def __stats_usage_by_frontend(self, days=7, bar_length=29):    
+    stats = list()
+    totals = int(self.origin.sqlite_overchan.execute('SELECT count(1) FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days")').fetchone()[0])
+    stats.append(('all posts', totals, '&nbsp;', 'in previous %s days' % days))
+    max = 0
+    for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, strftime("%Y-%m-%d",  sent, "unixepoch") as day, strftime("%w", sent, "unixepoch") as weekday, rtrim(substr(article_uid, instr(article_uid, "@") + 1), ">") as host FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days") GROUP BY day, host ORDER BY day DESC').fetchall():
+      if row[0] > max: max = row[0]
+      stats.append((row[0], row[1], self.origin.weekdays[int(row[2])], row[3]))
+    for index in range(1, len(stats)):
+      graph = ''
+      for x in range(0, int(float(stats[index][0])/max*bar_length)):
+        graph += '='
+      if len(graph) == 0:
+        graph = '&nbsp;'
+      stats[index] = ('<span title="%s">%s</span>' % (stats[index][2], stats[index][1]), stats[index][0], stats[index][3], graph)
+    return stats
+
+  def __stats_usage(self, days=30, bar_length=29):
+    stats = list()
+    totals = int(self.origin.sqlite_overchan.execute('SELECT count(1) FROM articles WHERE sent > strftime("%s", "now", "-31 days")').fetchone()[0])
+    stats.append(('all posts', totals, 'in previous %s days' % 31))
+    max = 0
+    for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, strftime("%Y-%m-%d",  sent, "unixepoch") as day, strftime("%w", sent, "unixepoch") as weekday FROM articles WHERE sent > strftime("%s", "now", "-31 days") GROUP BY day ORDER BY day DESC').fetchall():
+      if row[0] > max: max = row[0]
+      stats.append((row[0], row[1], self.origin.weekdays[int(row[2])]))
+    for index in range(1, len(stats)):
+      graph = ''
+      for x in range(0, int(float(stats[index][0])/max*bar_length)):
+        graph += '='
+      if len(graph) == 0:
+        graph = '&nbsp;'
+      stats[index] = ('<span title="%s">%s</span>' % (stats[index][2], stats[index][1]), stats[index][0], graph)
+    return stats
+
+  def __stats_usage_month(self, bar_length=29):
+    stats = list()
+    totals = int(self.origin.sqlite_overchan.execute('SELECT count(1) FROM articles').fetchone()[0])
+    stats.append(('all posts', totals, 'since beginning'))
+    max = 0
+    for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, strftime("%Y-%m",  sent, "unixepoch") as month FROM articles GROUP BY month ORDER BY month DESC').fetchall():
+      if row[0] > max: max = row[0]
+      stats.append((row[0], row[1]))
+    for index in range(1, len(stats)):
+      graph = ''
+      for x in range(0, int(float(stats[index][0])/max*bar_length)):
+        graph += '='
+      if len(graph) == 0:
+        graph = '&nbsp;'
+      stats[index] = (stats[index][1], stats[index][0], graph)  
+    return stats
+  
+  def __stats_usage_weekday(self, days=None, bar_length=29):
+    if days:
+      if days % 7 != 0:
+        raise Exception("days has to be a multiple of 7 or None")
+      result = self.origin.sqlite_overchan.execute('SELECT count(1) as counter, strftime("%w",  sent, "unixepoch") as weekday FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days") GROUP BY weekday ORDER BY weekday ASC').fetchall()
+    else:
+      result = self.origin.sqlite_overchan.execute('SELECT count(1) as counter, strftime("%w",  sent, "unixepoch") as weekday FROM articles GROUP BY weekday ORDER BY weekday ASC').fetchall()
+    stats = list()
+    max = 0 
+    for row in result:
+      if days:
+        avg = float(row[0]) / (days / 7)
+        if avg > max: max = avg
+        stats.append((avg, self.origin.weekdays[int(row[1])]))
+      else:
+        if row[0] > max: max = row[0]
+        stats.append((row[0], self.origin.weekdays[int(row[1])]))
+    for index in range(0, len(stats)):
+      graph = ''
+      for x in range(0, int(float(stats[index][0])/max*bar_length + 0.5)):
+        graph += '='
+      if len(graph) == 0:
+        graph = '&nbsp;'
+      if days:
+        stats[index] = (stats[index][1], "%.2f" % stats[index][0], graph)
+      else:
+        stats[index] = (stats[index][1], stats[index][0], graph)
+    stats.append(stats[0])
+    return stats[1:]
+
   def __get_navigation(self, current):
     out = list()
-    for item in [('moderation_log', 'moderation log'), ('pic_log', 'pic log'), ('message_log', 'message log')]:
+    #out.append('<div class="navigation">')
+    for item in (('moderation_log', 'moderation log'), ('pic_log', 'pic log'), ('message_log', 'message log'),('stats', 'stats'), ('settings', 'settings')):
       if item[0] == current:
-        out.append(item[1])
+        out.append(item[1] + '&nbsp;')
       else:
-        out.append('<a href="%s">%s</a>' % item)
+        out.append('<a href="%s">%s</a>&nbsp;' % item)
+    #out.append('<br /><br /></div><br /><br />')
     out.append('<br /><br />')
     return out
 
@@ -358,6 +687,9 @@ class censor(BaseHTTPRequestHandler):
 
   def __get_message_id_by_hash(self, hash):
     return self.origin.sqlite_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash = ?", (hash,)).fetchone()[0]
+  
+  def __breakit(self, rematch):
+    return '%s ' % rematch.group(0)
 
   def handle_moderation_request(self):
     author = 'Anonymous'
@@ -524,6 +856,8 @@ class censor_httpd(threading.Thread):
     self.httpd.sessions = dict()
     self.httpd.uid_host = self.uid_host
     self.httpd.censor = args['censor']
+    self.httpd.weekdays =  ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
+    self.httpd.breaker = re.compile('([^ ]{16})')
 
     # read templates
     self.log('reading templates..', 3)

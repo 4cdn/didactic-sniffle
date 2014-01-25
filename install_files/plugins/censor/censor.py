@@ -2,8 +2,10 @@
 
 from hashlib import sha1, sha512
 import time
+from datetime import datetime, timedelta
+from email.utils import parsedate_tz
+from calendar import timegm
 from binascii import unhexlify
-from datetime import datetime
 import os
 import threading
 import sqlite3
@@ -56,6 +58,8 @@ class main(threading.Thread):
     self.command_mapper['overchan-delete-attachment'] = self.handle_delete
     self.command_mapper['overchan-sticky'] = self.handle_sticky
     self.command_mapper['srnd-acl-mod'] = self.handle_srnd_acl_mod
+    self.command_mapper['overchan-board-add'] = self.handle_board_add
+    self.command_mapper['overchan-board-del'] = self.handle_board_del
 
   def shutdown(self):
     self.httpd.shutdown()
@@ -142,9 +146,10 @@ class main(threading.Thread):
           #self.log("got source httpd: %s" % str(data), 1)
           public_key, data = data
           key_id = self.get_key_id(public_key)
+          timestamp = int(time.time())
           #self.log("got source httpd: public_key: '%s'; data: '%s'" % (public_key, str(data)), 1)
           for line in data.split("\n"):
-            self.handle_line(line, key_id)
+            self.handle_line(line, key_id, timestamp)
       except Queue.Empty as e:
         pass
     self.sqlite_censor_conn.close()
@@ -193,10 +198,10 @@ class main(threading.Thread):
       self.log("seeking from %i back to %i" % (f.tell(), bodyoffset), 4)
       f.seek(bodyoffset)
     except Exception as e:
-      if self.debug > 2:
-        self.log("could not verify signature: %s: %s" % (message_id, e), 3)
+      if self.debug > 3:
+        self.log("could not verify signature: %s: %s" % (message_id, e), 4)
       else:
-        self.log("could not verify signature: %s" % message_id, 1)
+        self.log("could not verify signature: %s" % message_id, 3)
       f.close()
       return False
     self.parse_article(f, message_id, self.get_key_id(public_key))
@@ -213,25 +218,38 @@ class main(threading.Thread):
 
   def parse_article(self, article_fd, message_id, key_id):
     self.log("parsing %s.." % message_id, 3)
+    sent = None
     for line in article_fd:
       #print "skipping line %s" % line[:-1]
       if len(line) == 1:
         break
+      elif line.lower().startswith('date:'):
+        sent = line.split(' ', 1)[1][:-1]
+        sent_tz = parsedate_tz(sent)
+        if sent_tz:
+          offset = 0
+          if sent_tz[-1]: offset = sent_tz[-1]
+          sent = timegm((datetime(*sent_tz[:6]) - timedelta(seconds=offset)).timetuple())
+        else:
+          sent = int(time.time())
+    if not sent:
+      self.log("WARNING, received article does not contain a date: header. using current timestamp instead", 0)
+      sent = int(time.time())
     for line in article_fd:
       #print "parsing line %s" % line[:-1]
       if len(line) == 1:
         continue
-      self.handle_line(line[:-1], key_id)
+      self.handle_line(line[:-1], key_id, sent)
     article_fd.close()
 
-  def redistribute_command(self, groups, line, comment):
+  def redistribute_command(self, groups, line, comment, timestamp):
     hooks = dict()
     for group in groups:
       # whitelist
       for group_item in self.SRNd.hooks:
         if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
           for hook in self.SRNd.hooks[group_item]:
-            hooks[hook] = line
+            hooks[hook] = (line, timestamp)
       # blacklist
       for group_item in self.SRNd.hook_blacklist:
         if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
@@ -246,7 +264,7 @@ class main(threading.Thread):
       if hook.startswith('plugins-'):
         name = 'plugin-' + hook[8:]
         if name in self.SRNd.plugins:
-          self.SRNd.plugins[name].add_article(hooks[hook], "control")
+          self.SRNd.plugins[name].add_article(hooks[hook][0], source="control", timestamp=hooks[hook][1])
         else:
           self.log("unknown plugin detected. wtf? %s" % name, 0)
       elif hook.startswith('outfeeds-'):
@@ -254,7 +272,7 @@ class main(threading.Thread):
       else:
         self.log("unknown hook detected. wtf? %s" % hook, 0)
         
-  def handle_line(self, line, key_id):
+  def handle_line(self, line, key_id, timestamp):
     #print "should handle line for key_id %i: %s" % (key_id, line)
     command = line.lower().split(" ", 1)[0]
     if '#' in line:
@@ -268,7 +286,7 @@ class main(threading.Thread):
         accepted = 1
         reason_id = 2
         if groups:
-          self.redistribute_command(groups, line, comment)
+          self.redistribute_command(groups, line, comment, timestamp)
       else:
         data = line.lower().split(" ", 1)[1]
         accepted = 0
@@ -296,8 +314,13 @@ class main(threading.Thread):
     self.log("got deletion request: %s" % line, 3)
     command, message_id = line.split(" ", 1)
     self.log("should delete %s" % message_id, 3)
-    self.log("moving %s to articles/censored/" % message_id, 3)
-    if os.path.exists(os.path.join("articles", message_id)):
+    if os.path.exists(os.path.join("articles", "restored", message_id)):
+      # TODO if admin wants to delete a restored article we need to check for timestamp here as well
+      self.log("%s has been restored, ignoring delete" % message_id, 2)
+      # FIXME return None instead of empty list will stop plugins (overchan) to process and ignore the message as well
+      return (message_id, list())
+    elif os.path.exists(os.path.join("articles", message_id)):
+      self.log("moving %s to articles/censored/" % message_id, 3)
       os.rename(os.path.join("articles", message_id), os.path.join("articles", "censored", message_id))
     elif not os.path.exists(os.path.join('articles', 'censored', message_id)):
       f = open(os.path.join('articles', 'censored', message_id), 'w')
@@ -311,6 +334,16 @@ class main(threading.Thread):
       except Exception as e:
         self.log("could not delete: %s" % e, 3)
     return (message_id, groups)
+  
+  def handle_board_add(self, line):
+    # overchan specific, gets handled at overchan plugin via redistribute_command()
+    group_name = line.lower().split(' ')[1]
+    return (group_name, (group_name,))
+  
+  def handle_board_del(self, line):
+    # overchan specific, gets handled at overchan plugin via redistribute_command()
+    group_name = line.lower().split(' ')[1]
+    return (group_name, (group_name,))
   
   def handle_sticky(self, line):
     self.log("got sticky request: %s" % line, 2)
