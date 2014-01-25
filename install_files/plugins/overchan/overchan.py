@@ -254,6 +254,11 @@ class main(threading.Thread):
     o.write(i.read())
     o.close()
     i.close()
+    i = open(os.path.join(self.template_directory, 'user.css'), 'r')
+    o = open(os.path.join(self.output_directory, 'user.css'), 'w')
+    o.write(i.read())
+    o.close()
+    i.close()
     link = os.path.join(self.output_directory, 'img', self.no_file)
     if not os.path.exists(link):
       f = open(os.path.join(self.template_directory, self.no_file), 'r')
