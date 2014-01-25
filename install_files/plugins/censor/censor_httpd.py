@@ -568,8 +568,19 @@ class censor(BaseHTTPRequestHandler):
 
   def __stats_frontends(self):
     hosts = list()
-    for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, rtrim(substr(article_uid, instr(article_uid, "@") + 1), ">") as hosts FROM articles GROUP by hosts ORDER BY counter DESC').fetchall():
-       hosts.append((row[0], row[1]))
+    try:
+      for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, rtrim(substr(article_uid, instr(article_uid, "@") + 1), ">") as hosts FROM articles GROUP by hosts ORDER BY counter DESC').fetchall():
+        hosts.append((row[0], row[1]))
+    except:
+      # work around old sqlite3 version without instr() support:
+      #  - convert to lowercase
+      #  - remove all printable ASCII chars but " @ and > from the left
+      #  - remove all printable ASCII chars but ' @ and > from the left
+      #  - remove @ from the left
+      #  - remove > from the right
+      #  - group by result
+      for row in self.origin.sqlite_overchan.execute('SELECT count(1) as counter, rtrim(ltrim(ltrim(ltrim(lower(article_uid), " !#$%&\'()*+,-./0123456789:;<=?[\]^_`abcdefghijklmnopqrstuvwxyz{|}~"), \' !"#$%&()*+,-./0123456789:;<=?[\]^_`abcdefghijklmnopqrstuvwxyz{|}~\'), "@"), ">") as hosts FROM articles GROUP by hosts ORDER BY counter DESC').fetchall():
+        hosts.append((row[0], row[1]))        
     return hosts
 
   def __stats_groups(self, ids=False, status=False):
