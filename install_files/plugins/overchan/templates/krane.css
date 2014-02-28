@@ -1,22 +1,22 @@
       body {
         margin: 0px;
-        background: #101010 !important;
+        background: #101010;
         font-family: arial,helvetica,sans-serif;
-        color:#ffffff !important;
+        color:#ffffff;
         font-size: 10pt;
       }
       //table {
       //  font-size: 10pt;
       //}
       a {
-        color: #f7acb1 !important;
+        color: #f7acb1;
       }
       hr {
-        color: #363636 !important;
-        width: 98% !important;
-        height: 0px !important;
-        border-top: 1px solid !important;
-        border-bottom: none !important;
+        color: #363636;
+        width: 98%;
+        height: 0px;
+        border-top: 1px solid;
+        border-bottom: none;
       }
       .sitetitle {
         text-align: center;
@@ -27,7 +27,7 @@
         margin: 0px;
       }
       .sitetitle h2 a {
-        color: #ABABAB !important;
+        color: #ABABAB;
         text-decoration: none;
       }
       .filedescription {
@@ -35,16 +35,16 @@
       }
       .messageroot {
         margin-bottom: 1px;
-        border: none !important;
-        background:  #101010 !important;
+        border: none;
+        background:  #101010;
         padding: 5px;
       }
       .message {
         margin-left: 25px;
         margin-bottom: 1px;
-        border: 1px solid #363636 !important;
-        background: #1c1c1c !important;
-        border-radius: 0px !important;
+        border: 1px solid #363636;
+        background: #1c1c1c;
+        border-radius: 0px;
         padding: 5px;
       }
       .image_link {
@@ -52,13 +52,13 @@
         padding-right: 5px;
       }
       .image_root {
-        border-radius: 0px !important;
-        border: 1px solid #363636 !important;
+        border-radius: 0px;
+        border: 1px solid #363636;
         width: 180px;
       }
       .image {
-        border-radius: 0px !important; 
-        border: 1px solid #363636 !important;
+        border-radius: 0px; 
+        border: 1px solid #363636;
         width: 150px;
       }
       .thread {
@@ -71,11 +71,11 @@
         word-wrap: break-word;
       }
      .topicline b{
-        color:#ff1493 !important;
+        color:#ff1493;
      }
       .postform th {
-        background: #1c1c1c !important;
-        border: 1px solid #363636 !important;
+        background: #1c1c1c;
+        border: 1px solid #363636;
         text-align: left;
         padding-left: 4px;
         padding-right: 5px;
@@ -83,19 +83,19 @@
       .posttext {
         width: 400px;
         height: 20px;
-        border: 1px solid #363636 !important;
-        background: #ffffff !important;
+        border: 1px solid #363636;
+        background: #ffffff;
       }
       .postbutton {
         width: 100px;
-        border: 1px solid #363636 !important;
-        background: #ffffff !important;
+        border: 1px solid #363636;
+        background: #ffffff;
       }
       .postarea {
         width: 400px;
         height: 48px;
-        border: 1px solid #363636 !important;
-        background: #ffffff !important;
+        border: 1px solid #363636;
+        background: #ffffff;
         padding: 0px;
         margin: 0px;
       }
@@ -106,7 +106,7 @@
       }
       .boards a,
       .pagelist a{
-        text-decoration: none !important;
+        text-decoration: none;
       }
       .evilstuff {
         position: absolute;
@@ -216,8 +216,8 @@
         vertical-align: top;
       }
       .mod {
-        font-family: monospace !important;
-        font-size: 9pt !important;
+        font-family: monospace;
+        font-size: 9pt;
         margin: 20px 10px 10px;
       }
       .mod table {
