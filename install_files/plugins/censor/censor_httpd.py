@@ -94,6 +94,8 @@ class censor(BaseHTTPRequestHandler):
       self.session = self.path[10:58]
       self.root_path = self.path[:58] + '/' 
       if self.origin.sessions[self.session][0] < int(time.time()):
+        #del self.sessions[self.session]
+        # FIXME: test ^
         self.send_login()
         return
       self.origin.sessions[self.session][0] = int(time.time()) + 3600 * 6
@@ -102,7 +104,12 @@ class censor(BaseHTTPRequestHandler):
         key = path[8:]
         self.send_modify_key(key)
       elif path.startswith('/pic_log') or path.startswith("/piclog"):
-        self.send_piclog()
+        page = 1
+        if '?' in path:
+          try: page = int(path.split('?')[-1])
+          except: pass
+          if page < 1: page = 1 
+        self.send_piclog(page)
       elif path.startswith('/message_log') or path.startswith('/messagelog'):
         self.send_messagelog()
       elif path.startswith('/stats'):
@@ -349,24 +356,34 @@ class censor(BaseHTTPRequestHandler):
     self.end_headers()
     self.wfile.write(out)
     
-  def send_piclog(self, page=0):
-    self.send_response(200)
-    self.send_header('Content-type', 'text/html')
-    self.end_headers()
+  def send_piclog(self, page=1):
     #out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%'
-    out = '<html><head><title>piclog</title><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod">%%navigation%%'
-    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('pic_log')))
-    self.wfile.write(out)
-    for row in self.origin.sqlite_overchan.execute('SELECT * FROM (SELECT thumblink, parent, article_uid, last_update, sent FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC) ORDER by sent DESC').fetchall():
-      cur_template = '<a href="/%%target%%" target="_blank"><img src="%%thumblink%%" class="image" style="height: 200px;" /></a>\n'
+    out = '<html><head><title>piclog</title><link type="text/css" href="/styles.css" rel="stylesheet"></head>\n<body class="mod">\n%%navigation%%\n'
+    pagination = '<div style="float:right;">'
+    if page > 1:
+      pagination += '<a href="pic_log?%i">previous</a>' % (page-1)
+    else:
+      pagination += 'previous'
+    pagination += '&nbsp;<a href="pic_log?%i">next</a></div>' % (page+1)
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('pic_log', add_after=pagination)))
+    table = list()
+    table.append(out.replace("%%pagination%%", pagination))
+    #self.wfile.write(out)
+    for row in self.origin.sqlite_overchan.execute('SELECT * FROM (SELECT thumblink, parent, article_uid, last_update, sent FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC) ORDER by sent DESC LIMIT ?, 30', ((page-1)*30,)).fetchall():
+      cur_template = '<a href="/%%target%%" target="_blank"><img src="%%thumblink%%" class="image" style="height: 200px;" /></a>'
       if row[1] == '' or row[1] == row[2]:
         target = 'thread-%s.html' % sha1(row[2]).hexdigest()[:10]
       else:
         target = 'thread-%s.html#%s' % (sha1(row[1]).hexdigest()[:10], sha1(row[2]).hexdigest()[:10])
       cur_template = cur_template.replace("%%target%%", target)
       cur_template = cur_template.replace("%%thumblink%%", '/thumbs/' + row[0])
-      self.wfile.write(cur_template)
-    self.wfile.write('</body></html>')
+      table.append(cur_template)
+    table.append('<br />' + pagination + '<br />')
+    table.append('</body></html>')
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write("\n".join(table))
     
   def send_messagelog(self, page=0):
     table = list()
@@ -676,7 +693,7 @@ class censor(BaseHTTPRequestHandler):
     stats.append(stats[0])
     return stats[1:]
 
-  def __get_navigation(self, current):
+  def __get_navigation(self, current, add_after=None):
     out = list()
     #out.append('<div class="navigation">')
     for item in (('moderation_log', 'moderation log'), ('pic_log', 'pic log'), ('message_log', 'message log'),('stats', 'stats'), ('settings', 'settings')):
@@ -684,6 +701,8 @@ class censor(BaseHTTPRequestHandler):
         out.append(item[1] + '&nbsp;')
       else:
         out.append('<a href="%s">%s</a>&nbsp;' % item)
+    if add_after != None:
+      out.append(add_after)
     #out.append('<br /><br /></div><br /><br />')
     out.append('<br /><br />')
     return out
