@@ -104,14 +104,16 @@ class feed(threading.Thread):
         if e.errno == 11:
           # 11 Resource temporarily unavailable
           time.sleep(0.1)
-        elif e.errno == 32 or e.errno == 104:
+        elif e.errno == 32 or e.errno == 104 or e.errno == 110:
           # 32 Broken pipe
           # 104 Connection reset by peer
+          # 110 Connection timed out
           self.con_broken = True
           break
         else:
-          print "[{0}] unknown error while sending: {1}".format(self.name, e)
-          raise e
+          print "ERROR: [%s] got an unknown socket error at line 102 with error number %i: %s" % (self.name, e.errno, e)
+          self.con_broken = True  
+          break
     if not self.multiline_out and self.debug > 2: print "[{0}] out: {1}".format(self.name, message[:-2])
     if self.multiline_out and self.debug > 3: print "[{0}] out: {1}".format(self.name, message[:-2])
 
@@ -255,15 +257,17 @@ class feed(threading.Thread):
             # 11 Resource temporarily unavailable
             time.sleep(0.1)
             continue
-          elif e.errno == 32 or e.errno == 104:
+          elif e.errno == 32 or e.errno == 104 or e.errno == 110:
             # 32 Broken pipe
             # 104 Connection reset by peer
+            # 110 Connection timed out
             self.con_broken = True
             continue
-            #break
           else:
-            print e
-            raise e
+            # FIXME: different OS might produce different error numbers. make this portable.
+            print "ERROR: [%s] got an unknown socket error at line 251 with error number %i: %s" % (self.name, e.errno, e)       
+            self.con_broken = True
+            continue
         except sockssocket.ProxyError as e:
           print "[%s] proxy error: %s" % (self.name, e)
           self.con_broken = True
@@ -336,6 +340,8 @@ class feed(threading.Thread):
     self.SRNd.terminate_feed(self.name)
 
   def send_article(self, message_id):
+    # FIXME: what the fuck? rewrite this whole def! waste RAM much.
+    # FIXME: read line, convert, send, read next line. collect x lines before actually sending.
     if self.debug > 1: print '[{0}] sending article {1}'.format(self.name, message_id)
     self.multiline_out = True
     f = open(os.path.join('articles', message_id), 'r')
@@ -375,16 +381,16 @@ class feed(threading.Thread):
         if e.errno == 11:
           # 11 Resource temporarily unavailable
           time.sleep(0.1)
-        elif e.errno == 32 or e.errno == 104:
+        elif e.errno == 32 or e.errno == 104 or e.errno == 110:
           # 32 Broken pipe
           # 104 Connection reset by peer
+          # 110 Connection timed out
           self.con_broken = True
           break
         else:
-          print "[{0}] unknown error while sending: {1}".format(self.name, e)
-          raise e
-    # FIXME loop through. debug sucks donkeyballs.
-
+          print "ERROR: [%s] got an unknown socket error at line 378 with error number %i: %s" % (self.name, e.errno, e)
+          self.con_broken = True
+          break
 
     #line = f.readline()
     #while line != '' and not self.con_broken:
@@ -395,6 +401,7 @@ class feed(threading.Thread):
     #  line = f.readline()
     #f.close()
     if not self.con_broken:
+      # FIXME: the fuck? .\r\n already added previously. how does this even work? 
       self.send('.\r\n')
     else:
       self.add_article(message_id)
