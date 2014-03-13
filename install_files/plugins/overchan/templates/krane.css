@@ -5,9 +5,9 @@
         color:#ffffff;
         font-size: 10pt;
       }
-      //table {
-      //  font-size: 10pt;
-      //}
+      /*table {
+        font-size: 10pt;
+      }*/
       a {
         color: #f7acb1;
       }
@@ -223,7 +223,7 @@
         margin: 20px 10px 10px;
       }
       .mod tr:hover {
-        background-color: #282828;
+        background-color: #282828 !important;
       }
       .mod table {
         border-collapse: collapse;
