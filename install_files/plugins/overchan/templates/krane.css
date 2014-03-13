@@ -222,9 +222,12 @@
         font-size: 9pt;
         margin: 20px 10px 10px;
       }
+      .mod tr:hover {
+        background-color: #282828;
+      }
       .mod table {
         border-collapse: collapse;
-        font-size: 9pt; //damn you chromium
+        font-size: 9pt; /* damn you chromium */
       }
       .dontwrap {
         white-space: nowrap;
