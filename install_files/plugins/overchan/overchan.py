@@ -1158,6 +1158,7 @@ class main(threading.Thread):
     threadSingle = threadSingle.replace('%%board%%', full_group_name.split('.', 1)[1])
     threadSingle = threadSingle.replace('%%full_board%%', full_group_name_unquoted)
     threadSingle = threadSingle.replace('%%target%%', "{0}-1.html".format(full_group_name.split('.', 1)[1]))
+    threadSingle = threadSingle.replace('%%subject%%', root_row[2][:60])
     threadSingle = threadSingle.replace('%%thread_single%%', threadsTemplate)
     f = codecs.open(os.path.join(self.output_directory, 'thread-{0}.html'.format(root_message_id_hash[:10])), 'w', 'UTF-8')
     f.write(threadSingle)
