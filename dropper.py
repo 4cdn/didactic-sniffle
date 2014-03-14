@@ -108,7 +108,7 @@ class dropper(threading.Thread):
       for key in self.reqs:
         if article[index].lower().startswith(key + ':'):
           if key == 'path':
-            article[index] = 'Path: sfor-SRNd!' + article[index].split(' ', 1)[1]
+            article[index] = 'Path: ' + self.SRNd.instance_name + '!' + article[index].split(' ', 1)[1]
           elif key == 'from':
             # FIXME parse and validate from
             pass
@@ -143,7 +143,7 @@ class dropper(threading.Thread):
           additional_headers.append('From: Anonymous Coward <nobody@no.where>\n')
         elif req == 'path':
           if self.debug > 2: print "[dropper] should generate path.."
-          additional_headers.append('Path: sfor-SRNd\n')
+          additional_headers.append('Path: ' + self.SRNd.instance_name + '\n')
       else:
         if req == 'newsgroups':
           vals[req] = vals[req].split(',')

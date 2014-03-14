@@ -141,6 +141,7 @@ class SRNd(threading.Thread):
       self.ipv6 = ''
       self.infeed_debug = -1
       self.dropper_debug = -1
+      self.instance_name = ''
       f = open(config_file, 'r')
       config = f.read()
       f.close()
@@ -205,6 +206,16 @@ class SRNd(threading.Thread):
           if error:
             self.dropper_debug = 2
             print "[SRNd] dropper_debuglevel: only accepting integer between 0 and 5. using default of 2"
+        elif key == 'instance_name':
+          error = False
+          if ' ' in value:
+            error = True
+          else:
+            self.instance_name = value
+          if error:
+            self.instance_name = 'SRNd'
+            print "[SRNd] instance_name contains a space. using default of 'SRNd'"
+          
 
       # initialize required variables if currently unset
       if self.ip == '':
@@ -228,6 +239,9 @@ class SRNd(threading.Thread):
       if self.dropper_debug == -1:
         self.dropper_debug = 2
         writeConfig = True
+      if self.instance_name == '':
+        self.instance_name = 'SRNd'
+        writeConfig = True
     else:
       # initialize variables with sane defaults
       self.ip = ''
@@ -239,11 +253,13 @@ class SRNd(threading.Thread):
       self.ipv6 = False
       self.infeed_debug = 2
       self.dropper_debug = 2
+      self.instance_name = 'SRNd'
       writeConfig = True
     if self.setuid != '':
       try:
         self.uid, self.gid = pwd.getpwnam(self.setuid)[2:4]
       except KeyError as e:
+        # FIXME: user can't change config file as it might not exist at this point.
         print "[error] '{0}' is not a valid user on this system.".format(self.setuid)
         print "[error] either create {0} or change setuid at '{1}' into a valid username or an empty value to disable setuid".format(self.setuid, config_file)
         exit(1)
