@@ -184,7 +184,8 @@ class postman(BaseHTTPRequestHandler):
     sage = ''
     if 'allow_sage' in self.origin.frontends[frontend]:
       if self.origin.frontends[frontend]['allow_sage'].lower() in ('true', 'yes'):
-        if subject.lower().startswith('sage') or subject.lower().startswith('saging'):
+        if (subject.lower().startswith('sage') or subject.lower().startswith('saging') or 
+            name.lower().startswith('sage') or name.lower().startswith('saging')):
           sage = "\nX-Sage: True"
 
     sender = '{0} <{1}>'.format(name, email)
