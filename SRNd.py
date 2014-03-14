@@ -299,6 +299,7 @@ class SRNd(threading.Thread):
       f.write('setuid={0}\n'.format(self.setuid))
       f.write('infeed_debuglevel={0}\n'.format(self.infeed_debug))
       f.write('dropper_debuglevel={0}\n'.format(self.dropper_debug))
+      f.write('instance_name={0}\n'.format(self.instance_name))
       f.close()
 
   def update_hooks(self):
