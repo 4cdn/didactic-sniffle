@@ -757,7 +757,10 @@ class main(threading.Thread):
           image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_'))
           # FIXME read line by line and use hasher.update(line)
           imagehash = sha1(f.read()).hexdigest()
-          image_name = imagehash + '.' + image_name_original.split('.')[-1].lower()
+          image_name = image_name_original.split('.')[-1].lower()
+          if image_name in ('html', 'php'):
+            image_name = 'txt'
+          image_name = imagehash + '.' + image_name
           out_link = os.path.join(self.output_directory, 'img', image_name)
           f.close()
           # copy to out directory with new filename
@@ -814,7 +817,10 @@ class main(threading.Thread):
           f = open(tmp_link, 'r')
           image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_'))
           imagehash = sha1(f.read()).hexdigest()
-          image_name = imagehash + '.' + image_name_original.split('.')[-1].lower()
+          image_name = image_name_original.split('.')[-1].lower()
+          if image_name in ('html', 'php'):
+            image_name = 'txt'
+          image_name = imagehash + '.' + image_name
           out_link = os.path.join(self.output_directory, 'img', image_name)
           f.close()
           # copy to out directory with new filename
