@@ -99,7 +99,7 @@ class postman(BaseHTTPRequestHandler):
     if 'enforce_board' in self.origin.frontends[frontend]:
       group = self.origin.frontends[frontend]['enforce_board']
     else:
-      group = post_vars['board'].value
+      group = post_vars['board'].value.split('\n')[0]
       if group == '':
         self.die('board is empty')
         return
@@ -115,7 +115,7 @@ class postman(BaseHTTPRequestHandler):
     if not 'allowed_files' in self.origin.frontends[frontend]:
       file_name = ''
     else:
-      file_name = post_vars['file'].filename
+      file_name = post_vars['file'].filename.split('\n')[0]
       if file_name != '':
         content_type = post_vars['file'].type
         allowed = False
@@ -134,8 +134,8 @@ class postman(BaseHTTPRequestHandler):
     subject = self.origin.frontends[frontend]['defaults']['subject']
 
     if 'name' in post_vars:
-      if post_vars['name'].value != '':
-        name = post_vars['name'].value
+      if post_vars['name'].value.split('\n')[0] != '':
+        name = post_vars['name'].value.split('\n')[0]
 
     signature = False
     if 'allow_signatures' in self.origin.frontends[frontend]:
@@ -174,12 +174,12 @@ class postman(BaseHTTPRequestHandler):
               
     if 'email' in post_vars:
       #FIXME add email validation: .+@.+\..+
-      if post_vars['email'].value != '':
-        email = post_vars['email'].value
+      if post_vars['email'].value.split('\n')[0] != '':
+        email = post_vars['email'].value.split('\n')[0]
 
     if 'subject' in post_vars:
-      if post_vars['subject'].value != '':
-        subject = post_vars['subject'].value
+      if post_vars['subject'].value.split('\n')[0] != '':
+        subject = post_vars['subject'].value.split('\n')[0]
 
     sage = ''
     if 'allow_sage' in self.origin.frontends[frontend]:
@@ -196,7 +196,7 @@ class postman(BaseHTTPRequestHandler):
     if reply != '':
       result = self.origin.sqlite.execute('SELECT message_id FROM article_hashes WHERE message_id_hash = ?', (reply,)).fetchone()
       if not result:
-        self.die('hash {0} not found in hashes.db3'.format(reply))
+        self.die('hash {0} is not a valid hash'.format(reply))
         return
       else:
         reply = result[0]
