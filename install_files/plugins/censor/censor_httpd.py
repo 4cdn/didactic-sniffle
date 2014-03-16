@@ -326,7 +326,7 @@ class censor(BaseHTTPRequestHandler):
     del table[:]
     flagset_template = self.origin.template_log_flagset
     flaglist = list()
-    for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags, id FROM keys WHERE flags != 0 OR local_name != ""').fetchall():
+    for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags, count(key_id) as counter FROM keys, log WHERE (flags != 0 OR local_name != "") AND keys.id = log.key_id GROUP BY key_id ORDER by counter DESC').fetchall():
       cur_template = self.origin.template_log_whitelist
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%nick%%", row[1])
@@ -338,8 +338,7 @@ class censor(BaseHTTPRequestHandler):
           flaglist.append(flagset_template.replace("%%flag%%", "n"))
       cur_template = cur_template.replace("%%flagset%%", "\n".join(flaglist))
       del flaglist[:]
-      count = self.origin.sqlite_censor.execute("SELECT count(data) FROM log WHERE key_id = ?", (row[3],)).fetchone()
-      cur_template = cur_template.replace("%%count%%", str(count[0]))
+      cur_template = cur_template.replace("%%count%%", str(row[3]))
       table.append(cur_template)
     out = out.replace("%%mod_whitelist%%", "\n".join(table))
     del table[:]
