@@ -326,7 +326,7 @@ class censor(BaseHTTPRequestHandler):
     del table[:]
     flagset_template = self.origin.template_log_flagset
     flaglist = list()
-    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE flags != 0").fetchall():
+    for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags, id FROM keys WHERE flags != 0 OR local_name != ""').fetchall():
       cur_template = self.origin.template_log_whitelist
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%nick%%", row[1])
@@ -343,12 +343,18 @@ class censor(BaseHTTPRequestHandler):
       table.append(cur_template)
     out = out.replace("%%mod_whitelist%%", "\n".join(table))
     del table[:]
-    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE flags = 0").fetchall():
+    #for row in self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE flags = 0").fetchall():
+    for row in self.origin.sqlite_censor.execute('SELECT local_name, key, count(key_id) as counter, key_id FROM log, keys WHERE data in (SELECT data FROM log WHERE accepted = 1) AND keys.id = key_id GROUP by key_id ORDER BY counter DESC').fetchall():
       cur_template = self.origin.template_log_unknown
-      cur_template = cur_template.replace("%%key%%", row[0])
-      cur_template = cur_template.replace("%%nick%%", row[1])
+      cur_template = cur_template.replace("%%key%%", row[1])
+      if row[0] != "":
+        cur_template = cur_template.replace("%%key_or_nick%%", row[0])
+      else:
+        cur_template = cur_template.replace("%%key_or_nick%%", row[1])
       count = self.origin.sqlite_censor.execute("SELECT count(data) FROM log WHERE key_id = ?", (row[3],)).fetchone()
-      cur_template = cur_template.replace("%%count%%", str(count[0]))
+      cur_template = cur_template.replace("%%accepted_by_trusted_count%%", str(row[2]))
+      cur_template = cur_template.replace("%%accepted_by_trusted_total%%", str(count[0]))
+      cur_template = cur_template.replace("%%accepted_by_trusted_percentage%%", "%.2f" % (float(row[2]) / count[0] * 100))
       table.append(cur_template)
     out = out.replace("%%mod_unknown%%", "\n".join(table))
     self.send_response(200)
