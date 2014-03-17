@@ -347,9 +347,9 @@ class censor(BaseHTTPRequestHandler):
       cur_template = self.origin.template_log_unknown
       cur_template = cur_template.replace("%%key%%", row[1])
       if row[0] != "":
-        cur_template = cur_template.replace("%%key_or_nick%%", row[0])
+        cur_template = cur_template.replace("%%nick%%", row[0])
       else:
-        cur_template = cur_template.replace("%%key_or_nick%%", row[1])
+        cur_template = cur_template.replace("%%nick%%", "&nbsp;")
       count = self.origin.sqlite_censor.execute("SELECT count(data) FROM log WHERE key_id = ?", (row[3],)).fetchone()
       cur_template = cur_template.replace("%%accepted_by_trusted_count%%", str(row[2]))
       cur_template = cur_template.replace("%%accepted_by_trusted_total%%", str(count[0]))
