@@ -116,6 +116,10 @@ class postman(BaseHTTPRequestHandler):
       file_name = ''
     else:
       file_name = post_vars['file'].filename.split('\n')[0]
+      # FIXME: add (allowed_extensions) to frontend config, remove this check once implemented
+      if len(file_name) > 100:
+        self.die('filename too large')
+        return
       if file_name != '':
         content_type = post_vars['file'].type
         allowed = False
