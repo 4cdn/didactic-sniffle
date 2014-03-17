@@ -754,7 +754,7 @@ class main(threading.Thread):
           f.close()
           # get hash for filename
           f = open(tmp_link, 'r')
-          image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_'))
+          image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_').replace('"', '_'))
           # FIXME read line by line and use hasher.update(line)
           imagehash = sha1(f.read()).hexdigest()
           image_name = image_name_original.split('.')[-1].lower()
@@ -815,7 +815,7 @@ class main(threading.Thread):
           f.close()
           # get hash for filename
           f = open(tmp_link, 'r')
-          image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_'))
+          image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_').replace('"', '_'))
           imagehash = sha1(f.read()).hexdigest()
           image_name = image_name_original.split('.')[-1].lower()
           if image_name in ('html', 'php'):
