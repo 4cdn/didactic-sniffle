@@ -510,6 +510,7 @@ class main(threading.Thread):
     self.log("starting up as plugin..", 2)
     self.past_init()
     self.running = True
+    regen_overview = False
     while self.running:
       try:
         ret = self.queue.get(block=True, timeout=1)
@@ -540,11 +541,15 @@ class main(threading.Thread):
           for board in self.regenerate_boards:
             self.generate_board(board)
           self.regenerate_boards = list()
+          regen_overview = True
         if len(self.regenerate_threads) > 0:
           for thread in self.regenerate_threads:
             self.generate_thread(thread)
           self.regenerate_threads = list()
+          regen_overview = True
+        if regen_overview:
           self.generate_overview()
+          regen_overview = False
     self.sqlite_conn.close()
     self.sqlite_hasher_conn.close()
     self.log('bye', 2)
