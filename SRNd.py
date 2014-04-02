@@ -109,6 +109,7 @@ class SRNd(threading.Thread):
     directories = (
         'incoming',
         os.path.join('incoming', 'tmp'),
+        os.path.join('incoming', 'spam'),
         'articles',
         os.path.join('articles', 'censored'),
         os.path.join('articles', 'restored'),

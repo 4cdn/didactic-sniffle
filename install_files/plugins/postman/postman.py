@@ -258,7 +258,11 @@ class postman(BaseHTTPRequestHandler):
       self.send_header('Content-type', 'text/html')
       self.end_headers()
       self.wfile.write('<html><head><META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}"></head><body style="font-family: arial,helvetica,sans-serif; font-size: 10pt;"><center><br />your message has been received.<br />this page will <a href="{1}">redirect</a> you in {0} seconds.</center></body></html>'.format(redirect_duration, redirect_target))
-      os.rename(link, os.path.join('incoming', boundary))
+      if len(comment) > 40 and not ' ' in comment and not '\n' in comment:
+        self.origin.log("caught some base64 spam: incoming/spam/%s" % message_uid, 0)
+        os.rename(link, os.path.join('incoming', 'spam', message_uid))
+      else:
+        os.rename(link, os.path.join('incoming', boundary))
     except socket.error as e:
       if e.errno == 32:
         self.origin.log(e, 2)
