@@ -16,6 +16,7 @@ import threading
 import sqlite3
 import socket
 import nacl.signing
+import re
 if __name__ == '__main__':
   import nntplib
 
@@ -258,7 +259,7 @@ class postman(BaseHTTPRequestHandler):
       self.send_header('Content-type', 'text/html')
       self.end_headers()
       self.wfile.write('<html><head><META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}"></head><body style="font-family: arial,helvetica,sans-serif; font-size: 10pt;"><center><br />your message has been received.<br />this page will <a href="{1}">redirect</a> you in {0} seconds.</center></body></html>'.format(redirect_duration, redirect_target))
-      if len(comment) > 40 and not ' ' in comment and not '\n' in comment:
+      if len(comment) > 40 and self.origin.spamprot_base64.match(comment):
         self.origin.log("caught some base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
       else:
@@ -429,6 +430,7 @@ class main(threading.Thread):
       self.log('terminating..'.format(frontend_directory), 0)
       self.should_terminate = True
       return
+    self.httpd.spamprot_base64 = re.compile('^[a-zA-Z0-9]*$')
 
   def shutdown(self):
     self.httpd.shutdown()
