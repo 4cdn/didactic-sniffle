@@ -510,6 +510,7 @@ class feed(threading.Thread):
     elif commands[0] == 'QUIT':
       self.send('205 bye bye\r\n')
       self.state = 'closing down'
+      self.running = False
       self.socket.shutdown(socket.SHUT_RDWR)
     elif commands[0] == 'CHECK' and len(commands) == 2:
       #TODO 431 message-id   Transfer not possible; try again later
@@ -517,7 +518,7 @@ class feed(threading.Thread):
       if '/' in message_id:
          self.send('438 {0} illegal message-id\r\n'.format(message_id))
          return
-      if os.path.exists(os.path.join('articles', message_id)):
+      if os.path.exists(os.path.join('articles', message_id)) or os.path.exists(os.path.join('incoming', message_id)):
         self.send('438 {0} i know this article already\r\n'.format(message_id))
         return
       if os.path.exists(os.path.join('articles', 'censored', message_id)):
@@ -541,7 +542,7 @@ class feed(threading.Thread):
         self.send('435 illegal message-id\r\n')
         return
       #if self.sqlite.execute('SELECT message_id FROM articles WHERE message_id = ?', (arg,)).fetchone():
-      if os.path.exists(os.path.join('articles', arg)):
+      if os.path.exists(os.path.join('articles', arg)) or os.path.exists(os.path.join('incoming', arg)):
         self.send('435 already have this article\r\n')
         return
       if os.path.exists(os.path.join('articles', 'censored', arg)):
