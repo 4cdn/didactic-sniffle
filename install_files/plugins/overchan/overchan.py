@@ -238,6 +238,7 @@ class main(threading.Thread):
   def past_init(self):
     required_dirs = list()
     required_dirs.append(self.output_directory)
+    required_dirs.append(os.path.join(self.output_directory, '..', 'spamprotector'))
     required_dirs.append(os.path.join(self.output_directory, 'img'))
     required_dirs.append(os.path.join(self.output_directory, 'thumbs'))
     required_dirs.append(self.database_directory)
@@ -511,6 +512,7 @@ class main(threading.Thread):
     self.past_init()
     self.running = True
     regen_overview = False
+    got_control = False
     while self.running:
       try:
         ret = self.queue.get(block=True, timeout=1)
@@ -533,6 +535,7 @@ class main(threading.Thread):
             except:
               pass
         elif ret[0] == "control":
+          got_control = True
           self.handle_control(ret[1], ret[2])
         else:
           self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
@@ -550,6 +553,11 @@ class main(threading.Thread):
         if regen_overview:
           self.generate_overview()
           regen_overview = False
+        if got_control:
+          self.sqlite_conn.commit()
+          self.sqlite.execute('VACUUM;')
+          self.sqlite_conn.commit()
+          got_control = False
     self.sqlite_conn.close()
     self.sqlite_hasher_conn.close()
     self.log('bye', 2)
@@ -567,7 +575,12 @@ class main(threading.Thread):
     return pub_short
 
   def linkit(self, rematch):
-    row = self.db_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash like ?", (rematch.group(2) + "%",)).fetchall()
+    while True:
+      try:
+        row = self.db_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash like ?", (rematch.group(2) + "%",)).fetchall()
+        break;
+      except:
+        time.sleep(0.5)
     if not row:
       # hash not found
       return rematch.group(0)
@@ -1057,7 +1070,10 @@ class main(threading.Thread):
   def generate_thread(self, root_uid):
     root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, group_id, public_key FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()
     if not root_row:
-      self.log('error: root post not yet available: {0}'.format(root_uid), 1)
+      # FIXME: create temporary root post here? this will never get called on startup because it checks for root posts only
+      # FIXME: ^ alternatives: wasted threads in admin panel? red border around images in pic log? actually adding temporary root post while processing?
+      #root_row = (root_uid, 'none', 'root post not yet available', 0, 'root post not yet available', '', '', 0, '')
+      self.log('error: root post not yet available: {0}, creating temporary root post'.format(root_uid), 1)
       return
     root_message_id_hash = sha1(root_uid).hexdigest() #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
     if self.sqlite.execute('SELECT group_id FROM groups WHERE group_id = ? AND blocked = 1', (root_row[8],)).fetchone():
