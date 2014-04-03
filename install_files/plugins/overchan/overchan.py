@@ -388,9 +388,9 @@ class main(threading.Thread):
         if not row:
           self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 3)
         else:
-          if row[4] > timestamp:
-            self.log("post more recent than control message. ignoring delete-attachment for %s" % message_id, 2)
-            continue
+          #if row[4] > timestamp:
+          #  self.log("post more recent than control message. ignoring delete-attachment for %s" % message_id, 2)
+          #  continue
           if row[0] == 'invalid':
             self.log("attachment already deleted. ignoring delete-attachment for %s" % message_id, 4)
             continue
@@ -423,9 +423,9 @@ class main(threading.Thread):
         if not row:
           self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 3)
         else:
-          if row[4] > timestamp:
-            self.log("post more recent than control message. ignoring delete for %s" % message_id, 2)
-            continue
+          #if row[4] > timestamp:
+          #  self.log("post more recent than control message. ignoring delete for %s" % message_id, 2)
+          #  continue
           if row[0] == 'invalid':
             self.log("message already deleted/censored. ignoring delete for %s" % message_id, 4)
             continue
