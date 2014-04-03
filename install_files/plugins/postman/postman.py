@@ -32,17 +32,19 @@ class postman(BaseHTTPRequestHandler):
     BaseHTTPRequestHandler.__init__(self, request, client_address, origin)
 
   def do_POST(self):
-    cookie = self.headers.get('Cookie').strip()
-    for item in cookie.split(';'):
-      if item.startswith('sid='):
-        cookie = item
-    cookie = cookie.strip().split('=', 1)[1]
-    if cookie in self.origin.spammers:
-      self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
-      # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
-      # TODO: ^ requires multithreading
-      self.exit_ok(2, '/')
-      return
+    cookie = self.headers.get('Cookie')
+    if cookie:
+      cookie = cookie.strip()
+      for item in cookie.split(';'):
+        if item.startswith('sid='):
+          cookie = item
+      cookie = cookie.strip().split('=', 1)[1]
+      if cookie in self.origin.spammers:
+        self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
+        # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
+        # TODO: ^ requires multithreading
+        self.exit_ok(2, '/')
+        return
     self.path = unquote(self.path)
     if self.path == '/incoming':
       self.handleNewArticle()
