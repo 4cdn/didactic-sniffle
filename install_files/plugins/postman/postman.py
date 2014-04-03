@@ -43,8 +43,7 @@ class postman(BaseHTTPRequestHandler):
         self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
         # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
         # TODO: ^ requires multithreading
-        fake_ok = False
-        if fake_ok:
+        if self.origin.fake_ok:
           self.exit_ok(2, '/')
         return
     self.path = unquote(self.path)
@@ -285,18 +284,21 @@ class postman(BaseHTTPRequestHandler):
       if len(comment) > 40 and self.origin.spamprot_base64.match(comment):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log("caught some new base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
-        print self.headers
-        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        #print self.headers
+        if self.origin.fake_ok:
+          self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       elif len(subject) > 80 and self.origin.spamprot_base64.match(subject):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log("caught some new large subject spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         print self.headers
-        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        if self.origin.fake_ok:
+          self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       elif len(name) > 80 and self.origin.spamprot_base64.match(name):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log("caught some new large name spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         print self.headers
-        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        if self.origin.fake_ok:
+          self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       else:
         os.rename(link, os.path.join('incoming', boundary))
         #os.rename(link, os.path.join('incoming', 'spam', message_uid))
@@ -469,6 +471,7 @@ class main(threading.Thread):
       return
     self.httpd.spamprot_base64 = re.compile('^[a-zA-Z0-9]*$')
     self.httpd.spammers = list()
+    self.httpd.fake_ok = False
 
   def shutdown(self):
     self.httpd.shutdown()
