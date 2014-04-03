@@ -32,6 +32,17 @@ class postman(BaseHTTPRequestHandler):
     BaseHTTPRequestHandler.__init__(self, request, client_address, origin)
 
   def do_POST(self):
+    cookie = self.headers.get('Cookie').strip()
+    for item in cookie.split(';'):
+      if item.startswith('sid='):
+        cookie = item
+    cookie = cookie.strip().split('=', 1)[1]
+    if cookie in self.origin.spammers:
+      self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
+      # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
+      # TODO: ^ requires multithreading
+      self.exit_ok(2, '/')
+      return
     self.path = unquote(self.path)
     if self.path == '/incoming':
       self.handleNewArticle()
@@ -62,6 +73,18 @@ class postman(BaseHTTPRequestHandler):
       self.send_error('don\'t fuck around here mkay\n{0}'.format(message))
     else:
       self.send_error('don\'t fuck around here mkay')
+
+  def exit_ok(self, redirect_duration, redirect_target, add_spamheader=False):
+    self.send_response(200)
+    if add_spamheader:
+      if len(self.origin.spammers) > 255:
+        self.origin.spammers = list()
+      cookie = ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase) for x in range(16))
+      self.origin.spammers.append(cookie)
+      self.send_header('Set-Cookie', 'sid=%s; path=/incoming' % cookie)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write('<html><head><META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}"></head><body style="font-family: arial,helvetica,sans-serif; font-size: 10pt;"><center><br />your message has been received.<br />this page will <a href="{1}">redirect</a> you in {0} seconds.</center></body></html>'.format(redirect_duration, redirect_target))
 
   def log_request(self, code):
     return
@@ -255,15 +278,25 @@ class postman(BaseHTTPRequestHandler):
       del pubkey
       del signature
     try:
-      self.send_response(200)
-      self.send_header('Content-type', 'text/html')
-      self.end_headers()
-      self.wfile.write('<html><head><META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}"></head><body style="font-family: arial,helvetica,sans-serif; font-size: 10pt;"><center><br />your message has been received.<br />this page will <a href="{1}">redirect</a> you in {0} seconds.</center></body></html>'.format(redirect_duration, redirect_target))
       if len(comment) > 40 and self.origin.spamprot_base64.match(comment):
-        self.origin.log("caught some base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
+        self.origin.log("caught some new base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
+        print self.headers
+        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+      elif len(subject) > 80 and self.origin.spamprot_base64.match(subject):
+        os.rename(link, os.path.join('incoming', 'spam', message_uid))
+        self.origin.log("caught some new large subject spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
+        print self.headers
+        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+      elif len(name) > 80 and self.origin.spamprot_base64.match(name):
+        os.rename(link, os.path.join('incoming', 'spam', message_uid))
+        self.origin.log("caught some new large name spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
+        print self.headers
+        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       else:
         os.rename(link, os.path.join('incoming', boundary))
+        #os.rename(link, os.path.join('incoming', 'spam', message_uid))
+        self.exit_ok(redirect_duration, redirect_target)
     except socket.error as e:
       if e.errno == 32:
         self.origin.log(e, 2)
@@ -431,6 +464,7 @@ class main(threading.Thread):
       self.should_terminate = True
       return
     self.httpd.spamprot_base64 = re.compile('^[a-zA-Z0-9]*$')
+    self.httpd.spammers = list()
 
   def shutdown(self):
     self.httpd.shutdown()
