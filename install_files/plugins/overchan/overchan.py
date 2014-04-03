@@ -652,6 +652,11 @@ class main(threading.Thread):
           for group_in in groups_in:
             if group_in.startswith('overchan.'):
               groups.append(group_in)
+        elif ',' in group_in:
+          groups_in = group_in.split(',')
+          for group_in in groups_in:
+            if group_in.startswith('overchan.'):
+              groups.append(group_in)
         else:
           groups.append(group_in)
       elif lower_line.startswith('x-sage:'):
