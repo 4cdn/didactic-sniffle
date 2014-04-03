@@ -43,7 +43,9 @@ class postman(BaseHTTPRequestHandler):
         self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
         # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
         # TODO: ^ requires multithreading
-        self.exit_ok(2, '/')
+        fake_ok = False
+        if fake_ok:
+          self.exit_ok(2, '/')
         return
     self.path = unquote(self.path)
     if self.path == '/incoming':
