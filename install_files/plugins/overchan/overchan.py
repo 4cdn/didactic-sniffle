@@ -384,6 +384,9 @@ class main(threading.Thread):
           self.log("should delete board %s but there is no board with that name" % group_name, 2)
       elif line.lower().startswith("overchan-delete-attachment "):
         message_id = line.lower().split(" ")[1]
+        if os.path.exists(os.path.join("articles", "restored", message_id)):
+          self.log("message has been restored: %s. ignoring overchan-delete-attachment" % message_id, 2)
+          continue
         row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id, received FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
           self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 3)
@@ -419,6 +422,9 @@ class main(threading.Thread):
           self.sqlite_conn.commit()
       elif line.lower().startswith("delete "):
         message_id = line.lower().split(" ")[1]
+        if os.path.exists(os.path.join("articles", "restored", message_id)):
+          self.log("message has been restored: %s. ignoring delete" % message_id, 2)
+          continue
         row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id, received FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
           self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 3)
@@ -426,6 +432,7 @@ class main(threading.Thread):
           #if row[4] > timestamp:
           #  self.log("post more recent than control message. ignoring delete for %s" % message_id, 2)
           #  continue
+          # FIXME: allow deletion of earlier delete-attachment'ed messages
           if row[0] == 'invalid':
             self.log("message already deleted/censored. ignoring delete for %s" % message_id, 4)
             continue
