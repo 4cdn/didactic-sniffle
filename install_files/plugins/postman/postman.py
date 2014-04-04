@@ -42,13 +42,14 @@ class postman(BaseHTTPRequestHandler):
           cookie = item
       cookie = cookie.strip().split('=', 1)[1]
       if cookie in self.origin.spammers:
-        self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
+        self.origin.log('POST recognized an earlier spammer! %s' % cookie, 0)
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write('<html><body>')
-        for y in range(0,1000):
-          self.wfile.write('<img src="/img/%s.png" style="width: 100px;" />' % ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16)))
+        for y in range(0,100):
+          #self.wfile.write('<img src="/img/%s.png" style="width: 100px;" />' % ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16)))
+          self.wfile.write('<iframe src="/incoming/%s"></iframe>' % ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16)))
           #time.sleep(0.1)
         self.wfile.write('</body></html>')
         return
@@ -74,6 +75,25 @@ class postman(BaseHTTPRequestHandler):
     self.wfile.write('nope')
 
   def do_GET(self):
+    cookie = self.headers.get('Cookie')
+    if cookie:
+      cookie = cookie.strip()
+      for item in cookie.split(';'):
+        if item.startswith('sid='):
+          cookie = item
+      cookie = cookie.strip().split('=', 1)[1]
+      if cookie in self.origin.spammers:
+        self.origin.log('GET recognized an earlier spammer! %s' % cookie, 0)
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write('<html><body>')
+        for y in range(0,100):
+          #self.wfile.write('<img src="/img/%s.png" style="width: 100px;" />' % ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16)))
+          self.wfile.write('<iframe src="/incoming/%s"></iframe>' % ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16)))
+          #time.sleep(0.1)
+        self.wfile.write('</body></html>')
+        return
     self.path = unquote(self.path)
     if self.path == '/incoming/verify':
       self.send_captcha()
