@@ -17,6 +17,8 @@ import sqlite3
 import socket
 import nacl.signing
 import re
+import Image, ImageDraw, ImageFilter, ImageFont
+import cStringIO
 if __name__ == '__main__':
   import nntplib
 
@@ -42,22 +44,31 @@ class postman(BaseHTTPRequestHandler):
       if cookie in self.origin.spammers:
         self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
         # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
-        # TODO: ^ requires multithreading
+        # TODO: ^ requires multithreaded BaseHTTPServer
         if self.origin.fake_ok:
           self.exit_ok(2, '/')
         return
     self.path = unquote(self.path)
     if self.path == '/incoming':
-      self.handleNewArticle()
-    else:
-      self.origin.log("illegal access: {0}".format(self.path), 2)
-      self.send_response(200)
-      self.send_header('Content-type', 'text/plain')
-      self.end_headers()
-      self.wfile.write('nope')
+      if self.origin.captcha_verification:
+        self.send_captcha(message=random.choice(self.origin.quote_list))
+      else:
+        self.handleNewArticle()
+      return
+    if self.path == '/incoming/verify':
+      self.handleVerify()
+      return
+    self.origin.log("illegal access: {0}".format(self.path), 2)
+    self.send_response(200)
+    self.send_header('Content-type', 'text/plain')
+    self.end_headers()
+    self.wfile.write('nope')
 
   def do_GET(self):
     self.path = unquote(self.path)
+    if self.path == '/incoming/verify':
+      self.send_captcha()
+      return
     self.origin.log("illegal access: {0}".format(self.path), 2)
     self.send_response(200)
     self.send_header('Content-type', 'text/plain')
@@ -87,7 +98,26 @@ class postman(BaseHTTPRequestHandler):
       self.send_header('Set-Cookie', 'sid=%s; path=/incoming' % cookie)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write('<html><head><META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}"></head><body style="font-family: arial,helvetica,sans-serif; font-size: 10pt;"><center><br />your message has been received.<br />this page will <a href="{1}">redirect</a> you in {0} seconds.</center></body></html>'.format(redirect_duration, redirect_target))
+    self.wfile.write('''<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <title>straight into deep space</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <link rel="stylesheet" href="/styles.css" type="text/css">
+    <link rel="stylesheet" href="/user.css" type="text/css">
+    <META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}">
+  </head>
+  <body>
+    <center>
+      <br />
+      <br />
+      your message has been received.
+      <br />
+      this page will <a href="{1}">redirect</a> you in {0} seconds.
+    </center>
+  </body>
+</html>'''.format(redirect_duration, redirect_target))
 
   def log_request(self, code):
     return
@@ -95,7 +125,7 @@ class postman(BaseHTTPRequestHandler):
   def log_message(self, format):
     return
 
-  def handleNewArticle(self):
+  def handleVerify(self):
     post_vars = FieldStorage(
       fp=self.rfile,
       headers=self.headers,
@@ -104,6 +134,112 @@ class postman(BaseHTTPRequestHandler):
         'CONTENT_TYPE':self.headers['Content-Type'],
       }
     )
+    for item in ('expires', 'hash', 'solution'):
+      if item not in post_vars:
+        self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+        return
+    if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret):
+      #self.send_captcha('<font style="color: green;">yay</font>')
+      self.handleNewArticle(post_vars)
+      return
+    self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+  
+  def send_captcha(self, message='', post_vars=None):
+    if not post_vars:
+      post_vars = FieldStorage(
+        fp=self.rfile,
+        headers=self.headers,
+        environ={
+          'REQUEST_METHOD':'POST',
+          'CONTENT_TYPE':self.headers['Content-Type'],
+        }
+      )
+    frontend = post_vars.getvalue('frontend', '').replace('"', '&quot;')
+    board = post_vars.getvalue('board', '').replace('"', '&quot;')
+    reply = post_vars.getvalue('reply', '').replace('"', '&quot;')
+    target = post_vars.getvalue('target', '').replace('"', '&quot;')
+    name = post_vars.getvalue('name', '').replace('"', '&quot;')
+    email = post_vars.getvalue('email', '').replace('"', '&quot;')
+    subject = post_vars.getvalue('subject', '').replace('"', '&quot;')
+    if post_vars.getvalue('hash', '') != '':
+      comment = post_vars.getvalue('comment', '').replace('"', '&quot;')
+      file_name = post_vars.getvalue('file_name', '').replace('"', '&quot;')
+      file_ct = post_vars.getvalue('file_ct', '').replace('"', '&quot;')
+      file_b64 = post_vars.getvalue('file_b64', '').replace('"', '&quot;')
+    else:
+      comment = base64.encodestring(post_vars.getvalue('comment', ''))
+      if not 'allowed_files' in self.origin.frontends[frontend]:
+        file_name = ''
+        file_ct = ''
+        file_b64 = ''
+      else:
+        file_name = post_vars['file'].filename.replace('"', '&quot;')
+        if file_name == '':
+          file_ct = ''
+          file_b64 = ''
+        else:
+          file_ct = post_vars['file'].type.replace('"', '&quot;')
+          f = cStringIO.StringIO()
+          base64.encode(post_vars['file'].file, f)
+          file_b64 = f.getvalue()
+          f.close()
+    
+    passphrase = ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
+    #passphrase += ' ' + ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
+    expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret)
+    b64 = self.origin.captcha_render_b64(passphrase)
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write('''<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
+  "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <title>straight into deep space</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <link rel="stylesheet" href="/styles.css" type="text/css">
+    <link rel="stylesheet" href="/user.css" type="text/css">
+  </head>
+  <body class="mod">
+    <center>
+      %s
+      <br />
+      <br />
+      <img src="data:image/png;base64,%s" />
+      <br />
+      <form ACTION="/incoming/verify" METHOD="POST" enctype="multipart/form-data">
+        <input type="hidden" name="hash" value="%s" />
+        <input type="hidden" name="expires" value="%i" />
+        <input type="text" class="posttext" style="width: 150px;" name="solution" />
+        <input type="hidden" name="frontend" value="%s" />
+        <input type="hidden" name="board" value="%s" />
+        <input type="hidden" name="reply" value="%s" />
+        <input type="hidden" name="target" value="%s" />
+        <input type="hidden" name="name" value="%s" />
+        <input type="hidden" name="email" value="%s" />
+        <input type="hidden" name="subject" value="%s" />
+        <input type="hidden" name="comment" value="%s" />
+        <input type="hidden" name="file_name" value="%s" />
+        <input type="hidden" name="file_ct" value="%s" />
+        <input type="hidden" name="file_b64" value="%s" />
+        <br />
+        <input type="submit" class="postbutton" value="solve dat shit" />
+      </form>
+    </center>
+  </body>
+</html>''' % (message, b64, solution_hash, expires, frontend, board, reply, target, name, email, subject, comment, file_name, file_ct, file_b64))
+    return 
+
+  def handleNewArticle(self, post_vars=None):
+    if not post_vars:
+      post_vars = FieldStorage(
+        fp=self.rfile,
+        headers=self.headers,
+        environ={
+          'REQUEST_METHOD':'POST',
+          'CONTENT_TYPE':self.headers['Content-Type'],
+        }
+      )
     if not 'frontend' in post_vars:
       self.die('frontend not in post_vars')
       return
@@ -119,7 +255,10 @@ class postman(BaseHTTPRequestHandler):
       if not key in post_vars:
         self.die('{0} required but missing'.format(key))
         return
-    comment = post_vars['comment'].value
+    if 'hash' in post_vars:
+      comment = base64.decodestring(post_vars.getvalue('comment', ''))
+    else:
+      comment = post_vars['comment'].value
     if comment == '':
       self.send_error('no message received. nothing to say?')
       return
@@ -142,13 +281,19 @@ class postman(BaseHTTPRequestHandler):
     if not 'allowed_files' in self.origin.frontends[frontend]:
       file_name = ''
     else:
-      file_name = post_vars['file'].filename.split('\n')[0]
+      if 'hash' in post_vars:
+        file_name = post_vars.getvalue('file_name', '')
+      else:
+        file_name = post_vars['file'].filename.split('\n')[0]
       # FIXME: add (allowed_extensions) to frontend config, remove this check once implemented
       if len(file_name) > 100:
         self.die('filename too large')
         return
       if file_name != '':
-        content_type = post_vars['file'].type
+        if 'hash' in post_vars:
+          content_type = post_vars.getvalue('file_ct', '')
+        else:
+          content_type = post_vars['file'].type
         allowed = False
         for mime in self.origin.frontends[frontend]['allowed_files']:
           if (mime[-1] == '*' and content_type.startswith(mime[:-1])) or content_type == mime:
@@ -238,6 +383,8 @@ class postman(BaseHTTPRequestHandler):
       redirect_target = self.origin.frontends[frontend]['enforce_target'].replace('%%sha1_message_uid_10%%', sha1(message_uid).hexdigest()[:10])
     else:
       redirect_target = post_vars['target'].value
+    if 'hash' in post_vars:
+      redirect_target = '/' + redirect_target
     boundary = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(40))
     date = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
     #f = open('tmp/' + boundary, 'w')
@@ -250,7 +397,10 @@ class postman(BaseHTTPRequestHandler):
       f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage))
     else:
       f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage))
-      base64.encode(post_vars['file'].file, f)
+      if 'hash' in post_vars:
+        f.write(post_vars.getvalue('file_b64', ''))
+      else:
+        base64.encode(post_vars['file'].file, f)
       f.write('--{0}--\n'.format(boundary))
     f.close()
     if signature:
@@ -472,6 +622,23 @@ class main(threading.Thread):
     self.httpd.spamprot_base64 = re.compile('^[a-zA-Z0-9]*$')
     self.httpd.spammers = list()
     self.httpd.fake_ok = False
+    self.httpd.captcha_verification = True
+    self.httpd.captcha_alphabet = (string.ascii_letters + string.digits).replace('I', '').replace('l', '').replace('O', '').replace('0', '')
+    self.httpd.captcha_generate = self.captcha_generate
+    self.httpd.captcha_verify = self.captcha_verify
+    self.httpd.captcha_render_b64 = self.captcha_render_b64
+    self.httpd.quote_list = (
+      '''<i>"Nin knew how much humans loved money, riches, and material things - though he never really could understand why. The more technologically advanced the human species got, the more isolated they seemed to become, at the same time. It was alarming, how humans could spend entire lifetimes engaged in all kinds of activities, without getting any closer to knowing who they really were, inside."</i> <b>Jess C. Scott, The Other Side of Life</b>''',
+      '''<i>"The future is unwritten. there are best case scenarios. There are worst-case scenarios. both of them are great fun to write about if you' re a science fiction novelist, but neither of them ever happens in the real world. What happens in the real world is always a sideways-case scenario. World-changing marvels to us, are only wallpaper to our children."</i> <b>Bruce Sterling</b>''',
+      '''<i>"The technical revolution reshaping our society is based not in hierarchy but in decentralization, not in rigidity, but in fluidity."</i>''',
+      '''<i>"I may disagree with what you have to say, but I shall defend, to the death, your right to say it."</i>''',
+      '''<i>"Can't show this on a Christian imageboard."</i> <b>Anonymous</b>'''
+    )
+    foobar = self.captcha_render_b64('abc')
+    del foobar
+    f = open('/dev/urandom', 'r')
+    self.httpd.captcha_secret = f.read(32)
+    f.close() 
 
   def shutdown(self):
     self.httpd.shutdown()
@@ -495,6 +662,42 @@ class main(threading.Thread):
     if self.debug >= debuglevel:
       for line in "{0}".format(message).split('\n'):
         print "[{0}] {1}".format(self.name, line)
+
+  def captcha_generate(self, text, secret, expires=120):
+    expires = int(time.time()) + expires
+    if not expires % 3: solution_hash = sha256('%s%s%i' % (text, secret, expires)).hexdigest()
+    elif expires % 2: solution_hash = sha256('%i%s%s' % (expires, text, secret)).hexdigest()
+    else: solution_hash = sha256('%s%i%s' % (secret, expires, text)).hexdigest()
+    return (expires, solution_hash)
+
+  def captcha_verify(self, expires, solution_hash, guess, secret):
+    try: expires = int(expires)
+    except: return False
+    if int(time.time()) > expires:
+      return False
+    if not expires % 3:
+      if solution_hash != sha256('%s%s%i' % (guess, secret, expires)).hexdigest(): return False
+      return True
+    if expires % 2:
+      if solution_hash != sha256('%i%s%s' % (expires, guess, secret)).hexdigest(): return False
+      return True
+    if solution_hash != sha256('%s%i%s' % (secret, expires, guess)).hexdigest(): return False
+    return True
+  
+  def captcha_render_b64(self, guess):
+    #if self.captcha_size is None: size = self.defaultSize
+    font = ImageFont.truetype('plugins/postman/Vera.ttf', 30)
+    #img = Image.new("RGB", (256,96))
+    img = Image.new("RGB", (150,46))
+    draw = ImageDraw.Draw(img)
+    #draw.text((40,20), guess, font=font, fill='white')
+    draw.text((10,5), guess, font=font, fill='white')
+    #img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+    f = cStringIO.StringIO()
+    img.save(f, 'PNG')
+    content = f.getvalue()
+    f.close()
+    return content.encode("base64").replace("\n", "")
 
 if __name__ == '__main__':
   args = dict()
