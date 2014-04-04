@@ -43,6 +43,15 @@ class postman(BaseHTTPRequestHandler):
       cookie = cookie.strip().split('=', 1)[1]
       if cookie in self.origin.spammers:
         self.origin.log('recognized an earlier spammer! %s' % cookie, 0)
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write('<html><body>')
+        for y in range(0,1000):
+          self.wfile.write('<img src="/img/%s.png" style="width: 100px;" />' % ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16)))
+          #time.sleep(0.1)
+        self.wfile.write('</body></html>')
+        return
         # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
         # TODO: ^ requires multithreaded BaseHTTPServer
         if self.origin.fake_ok:
@@ -93,7 +102,7 @@ class postman(BaseHTTPRequestHandler):
     if add_spamheader:
       if len(self.origin.spammers) > 255:
         self.origin.spammers = list()
-      cookie = ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase) for x in range(16))
+      cookie = ''.join(random.choice(self.origin.captcha_alphabet) for x in range(16))
       self.origin.spammers.append(cookie)
       self.send_header('Set-Cookie', 'sid=%s; path=/incoming' % cookie)
     self.send_header('Content-type', 'text/html')
@@ -134,11 +143,21 @@ class postman(BaseHTTPRequestHandler):
         'CONTENT_TYPE':self.headers['Content-Type'],
       }
     )
+    cookie = self.headers.get('Cookie')
+    if cookie:
+      cookie = cookie.strip()
+      for item in cookie.split(';'):
+        if item.startswith('session='):
+          cookie = item
+      cookie = cookie.strip().split('=', 1)[1]
+      if len(cookie) != 32:
+        self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+        return
     for item in ('expires', 'hash', 'solution'):
       if item not in post_vars:
         self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
         return
-    if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret):
+    if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret + cookie):
       #self.send_captcha('<font style="color: green;">yay</font>')
       self.handleNewArticle(post_vars)
       return
@@ -185,11 +204,13 @@ class postman(BaseHTTPRequestHandler):
           f.close()
     
     passphrase = ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
+    cookie = ''.join(random.choice(self.origin.captcha_alphabet) for x in range(32))
     #passphrase += ' ' + ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
-    expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret)
+    expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret + cookie)
     b64 = self.origin.captcha_render_b64(passphrase)
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
+    self.send_header('Set-Cookie', 'session=%s; path=/incoming/verify' % cookie)
     self.end_headers()
     self.wfile.write('''<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
   "http://www.w3.org/TR/html4/strict.dtd">
@@ -435,20 +456,20 @@ class postman(BaseHTTPRequestHandler):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log("caught some new base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         #print self.headers
-        if self.origin.fake_ok:
-          self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        #if self.origin.fake_ok:
+        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       elif len(subject) > 80 and self.origin.spamprot_base64.match(subject):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log("caught some new large subject spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         print self.headers
-        if self.origin.fake_ok:
-          self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        #if self.origin.fake_ok:
+        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       elif len(name) > 80 and self.origin.spamprot_base64.match(name):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log("caught some new large name spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
         print self.headers
-        if self.origin.fake_ok:
-          self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        #if self.origin.fake_ok:
+        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       else:
         os.rename(link, os.path.join('incoming', boundary))
         #os.rename(link, os.path.join('incoming', 'spam', message_uid))
