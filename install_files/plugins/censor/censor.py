@@ -122,6 +122,7 @@ class main(threading.Thread):
     self.dropperdb = self.sqlite_dropper_conn.cursor()
     self.sqlite_censor_conn = sqlite3.connect('censor.db3')
     self.censordb = self.sqlite_censor_conn.cursor()
+    self.allowed_cache = dict()
     self.httpd.start()
     try:
       db_version = int(self.censordb.execute("SELECT value FROM config WHERE key = ?", ("db_version",)).fetchone()[0])
@@ -157,6 +158,12 @@ class main(threading.Thread):
     self.log('bye', 2)
     
   def allowed(self, key_id, command="all", board=None):
+    if key_id not in self.allowed_cache:
+      if len(self.allowed_cache) > 256:
+        self.allowed_cache = dict()
+      self.allowed_cache[key_id] = dict()
+    if command in self.allowed_cache[key_id]:
+      return self.allowed_cache[key_id][command]
     try:
       self.log("should check flags for key_id %i" % key_id, 3)
       flags_available = int(self.censordb.execute("SELECT flags FROM keys WHERE id=?", (key_id,)).fetchone()[0])
@@ -166,6 +173,7 @@ class main(threading.Thread):
           flag_required |= int(row[0])
       else:
         flag_required = int(self.censordb.execute("SELECT flag FROM commands WHERE command=?", (command,)).fetchone()[0])
+        self.allowed_cache[key_id][command] = (flags_available & flag_required) == flag_required
       return (flags_available & flag_required) == flag_required
     except Exception as e:
       print e
@@ -306,6 +314,7 @@ class main(threading.Thread):
       key, flags, local_nick = line.split(" ", 3)[1:]
       self.censordb.execute("UPDATE keys SET local_name = ?, flags = ? WHERE key = ?", (local_nick, flags, key))
       self.sqlite_censor_conn.commit()
+      self.allowed_cache = dict()
     except Exception as e:
       self.log("could not handle srnd-acl-mod: %s" % e, 1)
     return (key, None)
