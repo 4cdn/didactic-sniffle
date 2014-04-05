@@ -163,6 +163,16 @@ class postman(BaseHTTPRequestHandler):
         'CONTENT_TYPE':self.headers['Content-Type'],
       }
     )
+    for item in ('expires', 'hash', 'solution'):
+      if item not in post_vars:
+        self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+        return
+    if not self.origin.captcha_require_cookie:
+      if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret):
+        self.handleNewArticle(post_vars)
+        return
+      self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+      return
     cookie = self.headers.get('Cookie')
     if not cookie:
       self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
@@ -175,12 +185,7 @@ class postman(BaseHTTPRequestHandler):
     if len(cookie) != 32:
       self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
       return
-    for item in ('expires', 'hash', 'solution'):
-      if item not in post_vars:
-        self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
-        return
     if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret + cookie):
-      #self.send_captcha('<font style="color: green;">yay</font>')
       self.handleNewArticle(post_vars)
       return
     self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
@@ -232,13 +237,18 @@ class postman(BaseHTTPRequestHandler):
       identifier.update(comment)
       self.origin.log('failed capture try for %s' % identifier.hexdigest(), 1)
     passphrase = ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
-    cookie = ''.join(random.choice(self.origin.captcha_alphabet) for x in range(32))
     #passphrase += ' ' + ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
-    expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret + cookie)
     b64 = self.origin.captcha_render_b64(passphrase, self.origin.captcha_tiles, self.origin.captcha_font, self.origin.captcha_filter)
-    self.send_response(200)
-    self.send_header('Content-type', 'text/html')
-    self.send_header('Set-Cookie', 'session=%s; path=/incoming/verify' % cookie)
+    if self.origin.captcha_require_cookie:
+      cookie = ''.join(random.choice(self.origin.captcha_alphabet) for x in range(32))
+      expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret + cookie)
+      self.send_response(200)
+      self.send_header('Content-type', 'text/html')
+      self.send_header('Set-Cookie', 'session=%s; path=/incoming/verify' % cookie)
+    else:
+      expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret)
+      self.send_response(200)
+      self.send_header('Content-type', 'text/html')
     self.end_headers()
     self.wfile.write('''<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
   "http://www.w3.org/TR/html4/strict.dtd">
@@ -672,6 +682,7 @@ class main(threading.Thread):
     self.httpd.spammers = list()
     self.httpd.fake_ok = False
     self.httpd.captcha_verification = True
+    self.httpd.captcha_require_cookie = False
     self.httpd.captcha_alphabet = (string.ascii_letters + string.digits).replace('I', '').replace('l', '').replace('O', '').replace('0', '')
     self.httpd.captcha_generate = self.captcha_generate
     self.httpd.captcha_verify = self.captcha_verify
@@ -686,7 +697,8 @@ class main(threading.Thread):
       '''<i>"The future is unwritten. there are best case scenarios. There are worst-case scenarios. both of them are great fun to write about if you' re a science fiction novelist, but neither of them ever happens in the real world. What happens in the real world is always a sideways-case scenario. World-changing marvels to us, are only wallpaper to our children."</i> <b>Bruce Sterling</b>''',
       '''<i>"The technical revolution reshaping our society is based not in hierarchy but in decentralization, not in rigidity, but in fluidity."</i>''',
       '''<i>"I may disagree with what you have to say, but I shall defend, to the death, your right to say it."</i>''',
-      '''<i>"Can't show this on a Christian imageboard."</i> <b>Anonymous</b>'''
+      '''<i>"Can't show this on a Christian imageboard."</i> <b>Anonymous</b>''',
+      '''<i>"Being stupid for no reason is very human-like. I will continue to spam."</i> <b>Spammer-kun</b>'''
     )
     foobar = self.captcha_render_b64('abc', self.httpd.captcha_tiles, self.httpd.captcha_font, self.httpd.captcha_filter)
     del foobar
