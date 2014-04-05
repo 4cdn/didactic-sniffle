@@ -332,6 +332,9 @@ class main(threading.Thread):
         if os.path.exists(os.path.join("articles", "restored", message_id)):
           self.log("message has been restored: %s. ignoring delete" % message_id, 2)
           continue
+        if not self.sqlite.execute('SELECT count(article_uid) FROM pastes WHERE article_uid = ?', (message_id,)).fetchone()[0]:
+          self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 4)
+          continue
         self.log("deleting message_id %s" % message_id, 2)
         try: self.sqlite.execute('DELETE FROM pastes WHERE article_uid = ?', (message_id,))
         except Exception as e:
