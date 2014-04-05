@@ -71,6 +71,12 @@ class main(threading.Thread):
       except:
         self.debug = 2
         self.log("invalid value for debug, using default debug level of 2", 2)
+        
+    self.regenerate_html_on_startup = True
+    if 'generate_all' in args:
+      if args['generate_all'].lower() in ('false', 'no'):
+        self.regenerate_html_on_startup = False
+
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.log("replacement for root posts without picture not found: {0}".format(os.path.join(self.template_directory, self.no_file)), 0)
@@ -336,8 +342,6 @@ class main(threading.Thread):
       pass
     self.sqlite_conn.commit()
     
-    # FIXME add as startup_var
-    self.regenerate_html_on_startup = True
     if self.regenerate_html_on_startup:
       self.regenerate_all_html()
 
