@@ -145,11 +145,8 @@ class main(threading.Thread):
       i.close()
       self.handle_new(None, None)
 
-  def add_article(self, message_id, source=None, timestamp=None):
-    if not source:
-      self.queue.put(message_id)
-    else:
-      self.log("WARNING, got an article with unknown source: '%s'. ignoring %s" % (source, message_id), 0)
+  def add_article(self, message_id, source="article", timestamp=None):
+    self.queue.put((source, message_id, timestamp))
 
   def shutdown(self):
     self.running = False
@@ -186,29 +183,43 @@ class main(threading.Thread):
       for row in self.sqlite.execute('SELECT hash, sender, subject, sent, body FROM pastes ORDER BY sent ASC').fetchall():
         self.generate_paste(row[0][:10], row[4], row[2], row[1], row[3])
       self.recreate_index()
+    got_control = False
     while self.running:
       try:
-        message_id = self.queue.get(block=True, timeout=1)
-        if self.sqlite.execute('SELECT hash FROM pastes WHERE article_uid = ?', (message_id,)).fetchone():
-          self.log("run: %s already in database.." % message_id, 4)
-          continue
-        try:
-          f = open(os.path.join('articles', message_id), 'r')
-          message_content = f.readlines()
-          f.close()
-          if len(message_content) == 0:
-            self.log("empty NNTP message '{0}'. wtf?".format(message_id), 1)
+        ret = self.queue.get(block=True, timeout=1)
+        if ret[0] == "article":
+          message_id = ret[1]
+          if self.sqlite.execute('SELECT hash FROM pastes WHERE article_uid = ?', (message_id,)).fetchone():
+            self.log("run: %s already in database.." % message_id, 4)
             continue
-          if not self.parse_message(message_id, message_content):
-            continue
-          self.regenerate_index = True
-        except Exception as e:
-          self.log("something went wrong while parsing new article: %s" % e, 0)
           try:
+            f = open(os.path.join('articles', message_id), 'r')
+            message_content = f.readlines()
             f.close()
-          except:
-            pass
+            if len(message_content) == 0:
+              self.log("empty NNTP message '{0}'. wtf?".format(message_id), 1)
+              continue
+            if not self.parse_message(message_id, message_content):
+              continue
+            self.regenerate_index = True
+          except Exception as e:
+            self.log("something went wrong while parsing new article: %s" % e, 0)
+            try:
+              f.close()
+            except:
+              pass
+        elif ret[0] == "control":
+          got_control = True
+          self.handle_control(ret[1], ret[2])
+        else:
+          self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
       except Queue.Empty as e:
+        if got_control:
+          self.sqlite_conn.commit()
+          self.sqlite.execute('VACUUM;')
+          self.sqlite_conn.commit()
+          got_control = False
+          self.regenerate_index = True
         if self.regenerate_index:
           self.recreate_index()
           self.regenerate_index = False
@@ -312,6 +323,25 @@ class main(threading.Thread):
     template = template.replace('%%pasterows%%', ''.join(paste_recent))
     f.write(template)
     f.close()
+
+  def handle_control(self, lines, timestamp):
+    self.log("got control message: %s" % lines, 5)
+    for line in lines.split("\n"):
+      if line.lower().startswith("delete "):
+        message_id = line.lower().split(" ")[1]
+        if os.path.exists(os.path.join("articles", "restored", message_id)):
+          self.log("message has been restored: %s. ignoring delete" % message_id, 2)
+          continue
+        self.log("deleting message_id %s" % message_id, 2)
+        try: self.sqlite.execute('DELETE FROM pastes WHERE article_uid = ?', (message_id,))
+        except Exception as e:
+          self.log("could not delete database entry for message_id %s: %s" %(message_id, e), 1)
+        try: os.unlink(os.path.join(self.outputDirectory, "%s.html" % sha1(message_id).hexdigest()[:10]))
+        except Exception as e:
+          self.log("could not delete paste for message_id %s: %s" %(message_id, e), 1)
+        self.sqlite_conn.commit()
+      else:
+        self.log("unknown control message: %s" % line, 0)
 
   def handle_new(self, signum, frame):
     # FIXME use try: except around open(), also check for duplicate here
