@@ -164,15 +164,17 @@ class postman(BaseHTTPRequestHandler):
       }
     )
     cookie = self.headers.get('Cookie')
-    if cookie:
-      cookie = cookie.strip()
-      for item in cookie.split(';'):
-        if item.startswith('session='):
-          cookie = item
-      cookie = cookie.strip().split('=', 1)[1]
-      if len(cookie) != 32:
-        self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
-        return
+    if not cookie:
+      self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+      return
+    cookie = cookie.strip()
+    for item in cookie.split(';'):
+      if item.startswith('session='):
+        cookie = item
+    cookie = cookie.strip().split('=', 1)[1]
+    if len(cookie) != 32:
+      self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+      return
     for item in ('expires', 'hash', 'solution'):
       if item not in post_vars:
         self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
@@ -184,7 +186,9 @@ class postman(BaseHTTPRequestHandler):
     self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
   
   def send_captcha(self, message='', post_vars=None):
+    failed = True
     if not post_vars:
+      failed = False
       post_vars = FieldStorage(
         fp=self.rfile,
         headers=self.headers,
@@ -222,12 +226,16 @@ class postman(BaseHTTPRequestHandler):
           base64.encode(post_vars['file'].file, f)
           file_b64 = f.getvalue()
           f.close()
-    
+    if failed:
+      identifier = sha256()
+      identifier.update(frontend + board + reply + target + name + email + subject)
+      identifier.update(comment)
+      self.origin.log('failed capture try for %s' % identifier.hexdigest(), 1)
     passphrase = ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
     cookie = ''.join(random.choice(self.origin.captcha_alphabet) for x in range(32))
     #passphrase += ' ' + ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
     expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret + cookie)
-    b64 = self.origin.captcha_render_b64(passphrase)
+    b64 = self.origin.captcha_render_b64(passphrase, self.origin.captcha_tiles, self.origin.captcha_font, self.origin.captcha_filter)
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.send_header('Set-Cookie', 'session=%s; path=/incoming/verify' % cookie)
@@ -668,6 +676,11 @@ class main(threading.Thread):
     self.httpd.captcha_generate = self.captcha_generate
     self.httpd.captcha_verify = self.captcha_verify
     self.httpd.captcha_render_b64 = self.captcha_render_b64
+    self.httpd.captcha_font = ImageFont.truetype('plugins/postman/Vera.ttf', 30)
+    self.httpd.captcha_filter = ImageFilter.EMBOSS
+    self.httpd.captcha_tiles = list()
+    for item in os.listdir('plugins/postman/tiles'):
+      self.httpd.captcha_tiles.append(Image.open('plugins/postman/tiles/%s' % item))
     self.httpd.quote_list = (
       '''<i>"Nin knew how much humans loved money, riches, and material things - though he never really could understand why. The more technologically advanced the human species got, the more isolated they seemed to become, at the same time. It was alarming, how humans could spend entire lifetimes engaged in all kinds of activities, without getting any closer to knowing who they really were, inside."</i> <b>Jess C. Scott, The Other Side of Life</b>''',
       '''<i>"The future is unwritten. there are best case scenarios. There are worst-case scenarios. both of them are great fun to write about if you' re a science fiction novelist, but neither of them ever happens in the real world. What happens in the real world is always a sideways-case scenario. World-changing marvels to us, are only wallpaper to our children."</i> <b>Bruce Sterling</b>''',
@@ -675,7 +688,7 @@ class main(threading.Thread):
       '''<i>"I may disagree with what you have to say, but I shall defend, to the death, your right to say it."</i>''',
       '''<i>"Can't show this on a Christian imageboard."</i> <b>Anonymous</b>'''
     )
-    foobar = self.captcha_render_b64('abc')
+    foobar = self.captcha_render_b64('abc', self.httpd.captcha_tiles, self.httpd.captcha_font, self.httpd.captcha_filter)
     del foobar
     f = open('/dev/urandom', 'r')
     self.httpd.captcha_secret = f.read(32)
@@ -725,15 +738,22 @@ class main(threading.Thread):
     if solution_hash != sha256('%s%i%s' % (secret, expires, guess)).hexdigest(): return False
     return True
   
-  def captcha_render_b64(self, guess):
+  def captcha_render_b64(self, guess, tiles, font, filter=None):
     #if self.captcha_size is None: size = self.defaultSize
-    font = ImageFont.truetype('plugins/postman/Vera.ttf', 30)
     #img = Image.new("RGB", (256,96))
+    tile = random.choice(tiles)
     img = Image.new("RGB", (150,46))
+    offset = (random.uniform(0, 1), random.uniform(0, 1))
+    for j in xrange(-1, int(img.size[1] / tile.size[1]) + 1):
+      for i in xrange(-1, int(img.size[0] / tile.size[0]) + 1):
+        dest = (int((offset[0] + i) * tile.size[0]),
+                int((offset[1] + j) * tile.size[1]))
+        img.paste(tile, dest)
     draw = ImageDraw.Draw(img)
     #draw.text((40,20), guess, font=font, fill='white')
-    draw.text((10,5), guess, font=font, fill='white')
-    #img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+    draw.text((10,5), guess, font=font, fill='black')
+    if filter:
+      img = img.filter(filter)
     f = cStringIO.StringIO()
     img.save(f, 'PNG')
     content = f.getvalue()
