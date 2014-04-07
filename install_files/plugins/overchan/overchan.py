@@ -437,9 +437,9 @@ class main(threading.Thread):
           #  self.log("post more recent than control message. ignoring delete for %s" % message_id, 2)
           #  continue
           # FIXME: allow deletion of earlier delete-attachment'ed messages
-          if row[0] == 'invalid':
-            self.log("message already deleted/censored. ignoring delete for %s" % message_id, 4)
-            continue
+          #if row[0] == 'invalid':
+          #  self.log("message already deleted/censored. ignoring delete for %s" % message_id, 4)
+          #  continue
           self.log("deleting message_id %s" % message_id, 2)
           if row[3] not in self.regenerate_boards:
             self.regenerate_boards.append(row[3])
@@ -466,6 +466,7 @@ class main(threading.Thread):
             self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
             if row[2] not in self.regenerate_threads:
               self.regenerate_threads.append(row[2])
+            # FIXME: add detection for parent == deleted message (not just censored) and if true, add to root_posts 
           if len(row[0]) > 0 and row[0] != "invalid":
             self.log("deleting message_id %s, has attachment %s" % (message_id, row[0]), 4)
             try:
