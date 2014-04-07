@@ -203,8 +203,14 @@ class postman(BaseHTTPRequestHandler):
         }
       )
     frontend = post_vars.getvalue('frontend', '').replace('"', '&quot;')
-    board = post_vars.getvalue('board', '').replace('"', '&quot;')
     reply = post_vars.getvalue('reply', '').replace('"', '&quot;')
+    if frontend == 'overchan' and reply != '':
+      # FIXME add ^ allow_reply_bypass to frontend configuration
+      if self.origin.captcha_bypass_after_timestamp_reply < int(time.time()):
+        self.origin.log('bypassing captcha for reply', 2)
+        self.handleNewArticle(post_vars) 
+        return
+    board = post_vars.getvalue('board', '').replace('"', '&quot;')
     target = post_vars.getvalue('target', '').replace('"', '&quot;')
     name = post_vars.getvalue('name', '').replace('"', '&quot;')
     email = post_vars.getvalue('email', '').replace('"', '&quot;')
@@ -435,6 +441,7 @@ class postman(BaseHTTPRequestHandler):
         return
       else:
         reply = result[0]
+        self.origin.captcha_bypass_after_timestamp_reply = int(time.time()) + self.origin.captcha_bypass_after_seconds_reply
     uid_rnd = ''.join(random.choice(string.ascii_lowercase) for x in range(10))
     uid_time = int(time.time())
     message_uid = '<{0}{1}@{2}>'.format(uid_rnd, uid_time, self.origin.frontends[frontend]['uid_host'])
@@ -683,7 +690,11 @@ class main(threading.Thread):
     self.httpd.fake_ok = False
     self.httpd.captcha_verification = True
     self.httpd.captcha_require_cookie = False
-    self.httpd.captcha_alphabet = (string.ascii_letters + string.digits).replace('I', '').replace('l', '').replace('O', '').replace('0', '')
+    self.httpd.captcha_bypass_after_seconds_reply = 60 * 10
+    self.httpd.captcha_bypass_after_timestamp_reply = int(time.time()) 
+    self.httpd.captcha_alphabet = string.ascii_letters + string.digits
+    for char in ('I', 'l', 'O', '0', 'k', 'K'):
+      self.httpd.captcha_alphabet = self.httpd.captcha_alphabet.replace(char, '')
     self.httpd.captcha_generate = self.captcha_generate
     self.httpd.captcha_verify = self.captcha_verify
     self.httpd.captcha_render_b64 = self.captcha_render_b64
