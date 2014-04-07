@@ -114,8 +114,9 @@
         text-decoration: none;
       }
       .evilstuff {
-        background-color: #222222;
-        border: 1px dotted #666666;
+        background-color: #333333;
+        border: 1px solid #666666;
+        border-radius: 30px;
         padding: 10px;
         margin-right: 10px;
         position: fixed;
