@@ -6,6 +6,7 @@ import socket
 import pwd
 import threading
 import sqlite3
+import random
 from distutils.dir_util import copy_tree
 
 import dropper
@@ -555,7 +556,9 @@ class SRNd(threading.Thread):
                   self.log("unknown hook detected. wtf? %s" % hook, 0)
         # got all whitelist matching hooks for current group which are not matched by blacklist as well in current_sync_targets. hopefully.
         if len(current_sync_targets) > 0:
-          for link in os.listdir(group_dir):
+          file_list = os.listdir(group_dir)
+          random.shuffle(file_list)
+          for link in file_list:
             message_id = os.path.basename(os.readlink(os.path.join(group_dir, link)))
             for current_hook in current_sync_targets:
               if current_hook.startswith('outfeed-'):
