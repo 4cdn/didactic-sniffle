@@ -13,14 +13,11 @@ class dropper(threading.Thread):
   def __init__(self, listener, master, debug=3):
     self.SRNd = master
     self.socket = listener
+    self.db_version = 1
     self.watching = os.path.join(os.getcwd(), "incoming")
     self.sqlite_conn = sqlite3.connect('dropper.db3')
     self.sqlite = self.sqlite_conn.cursor()
-    self.sqlite.execute('''CREATE TABLE IF NOT EXISTS groups
-               (group_id INTEGER PRIMARY KEY AUTOINCREMENT, group_name text UNIQUE, lowest_id INTEGER, highest_id INTEGER, article_count INTEGER, flag text, group_added_at INTEGER, last_update INTEGER)''')
-    self.sqlite.execute('''CREATE TABLE IF NOT EXISTS articles
-               (message_id text, group_id INTEGER, article_id INTEGER, received INTEGER, PRIMARY KEY (article_id, group_id))''')
-    self.sqlite_conn.commit()
+ 
     self.sqlite_hasher_conn = sqlite3.connect('hashes.db3')
     self.sqlite_hasher = self.sqlite_hasher_conn.cursor()
     self.sqlite_hasher.execute('''CREATE TABLE IF NOT EXISTS article_hashes
@@ -30,8 +27,29 @@ class dropper(threading.Thread):
     threading.Thread.__init__(self)
     self.name = "SRNd-dropper"
     self.debug = debug
-    #self.handler_reconfigure_hooks(None, None)
+    try:
+      db_version = int(self.sqlite.execute("SELECT value FROM config WHERE key = ?", ("db_version",)).fetchone()[0])
+      if db_version < self.db_version:
+        self.update_db(db_version)
+    except Exception as e:
+      if self.debug > 3: print "[dropper] error while fetching db_version: %s" % e
+      self.update_db(0)
 
+  def update_db(self, current_version):
+    if self.debug > 4: "[dropper] should update db from version %i" % current_version
+    if current_version == 0:
+      self.sqlite.execute("CREATE TABLE config (key text PRIMARY KEY, value text)")
+      self.sqlite.execute('INSERT INTO config VALUES ("db_version","1")')
+      
+      self.sqlite.execute('''CREATE TABLE IF NOT EXISTS groups
+                 (group_id INTEGER PRIMARY KEY AUTOINCREMENT, group_name text UNIQUE, lowest_id INTEGER, highest_id INTEGER, article_count INTEGER, flag text, group_added_at INTEGER, last_update INTEGER)''')
+      self.sqlite.execute('''CREATE TABLE IF NOT EXISTS articles
+                 (message_id text, group_id INTEGER, article_id INTEGER, received INTEGER, PRIMARY KEY (article_id, group_id))''')
+
+      self.sqlite.execute('CREATE INDEX article_idx ON articles(message_id);')
+      self.sqlite_conn.commit()
+      current_version = 1
+    
   def handler_progress_incoming(self, signum, frame):
     if not self.running: return
     if self.busy:

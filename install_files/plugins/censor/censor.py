@@ -50,7 +50,7 @@ class main(threading.Thread):
     self.log('initializing censor_httpd..', 3)
     args['censor'] = self
     self.httpd = censor_httpd.censor_httpd("censor_httpd", args)
-    self.db_version = 1
+    self.db_version = 2
     self.all_flags = "511"
     self.queue = Queue.Queue()
     self.command_mapper = dict()
@@ -71,9 +71,9 @@ class main(threading.Thread):
     #self.log('this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])), 0)
 
   def update_db(self, current_version):
-    self.log("should update db from version %i" % current_version, 3)
+    self.log("should update db from version %i" % current_version, 4)
     if current_version == 0:
-      
+      self.log("updating db from version %i to version %i" % (current_version, 1), 1)  
       # create configuration
       self.censordb.execute("CREATE TABLE config (key text PRIMARY KEY, value text)")
       self.censordb.execute('INSERT INTO config VALUES ("db_version","1")')
@@ -112,8 +112,15 @@ class main(threading.Thread):
       self.censordb.execute("CREATE TABLE log (id INTEGER PRIMARY KEY, command_id INTEGER, accepted INTEGER, data TEXT, key_id INTEGER, reason_id INTEGER, comment TEXT, timestamp INTEGER, UNIQUE(key_id, command_id, data))")
       
       self.sqlite_censor_conn.commit()
+      current_version = 1
       #self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
       #self.censordb.execute("CREATE TABLE IF NOT EXISTS config (key text PRIMARY KEY, value text)")
+    if current_version == 1:
+      self.log("updating db from version %i to version %i" % (current_version, 2), 1)
+      self.censordb.execute("CREATE TABLE signature_cache (message_uid text PRIMARY KEY, valid INTEGER)")
+      self.censordb.execute('UPDATE config SET value = "2" WHERE key = "db_version"')
+      self.sqlite_censor_conn.commit()
+      current_version = 2
 
   def run(self):
     #if self.should_terminate:
@@ -123,6 +130,8 @@ class main(threading.Thread):
     self.sqlite_censor_conn = sqlite3.connect('censor.db3')
     self.censordb = self.sqlite_censor_conn.cursor()
     self.allowed_cache = dict()
+    self.key_cache = dict()
+    self.command_cache = dict()
     self.httpd.start()
     try:
       db_version = int(self.censordb.execute("SELECT value FROM config WHERE key = ?", ("db_version",)).fetchone()[0])
@@ -137,12 +146,25 @@ class main(threading.Thread):
         self.sqlite_censor_conn.commit()
       except Exception as e:
         pass
+    #start_time = int(time.time())
+    #max_time = 0
+    #count = 0
+    #max_time_message_id = ''
+    #self.log("starting processing at %i" % start_time, 1)
     self.running = True
     while self.running:
       try:
         source, data = self.queue.get(block=True, timeout=1)
+        #p_start = int(time.time())
         if source == "article":
           self.process_article(data)
+          #p_dur = int(time.time()) - p_start
+          #count += 1
+          #if p_dur > max_time:
+          #  max_time = p_dur
+          #  max_time_message_id = data
+          #if not count % 100:
+          #  self.log('current stats after %i articles: %.2f seconds/article, max_time %i for %s' % (count, float(int(time.time())-start_time)/count, max_time, max_time_message_id), 5)
         elif source == "httpd":
           #self.log("got source httpd: %s" % str(data), 1)
           public_key, data = data
@@ -152,20 +174,23 @@ class main(threading.Thread):
           for line in data.split("\n"):
             self.handle_line(line, key_id, timestamp)
       except Queue.Empty as e:
+        #end_time = int(time.time())
+        #self.log("finally done processing at %i, took %i seconds for %i articles. longest time was %i for %s" % (end_time, end_time-start_time, count, max_time, max_time_message_id), 1)
         pass
     self.sqlite_censor_conn.close()
     self.sqlite_dropper_conn.close()
     self.log('bye', 2)
     
   def allowed(self, key_id, command="all", board=None):
-    if key_id not in self.allowed_cache:
+    if key_id in self.allowed_cache:
+      if command in self.allowed_cache[key_id]:
+        return self.allowed_cache[key_id][command]
+    else:
       if len(self.allowed_cache) > 256:
         self.allowed_cache = dict()
       self.allowed_cache[key_id] = dict()
-    if command in self.allowed_cache[key_id]:
-      return self.allowed_cache[key_id][command]
     try:
-      self.log("should check flags for key_id %i" % key_id, 3)
+      #self.log("should check flags for key_id %i" % key_id, 1)
       flags_available = int(self.censordb.execute("SELECT flags FROM keys WHERE id=?", (key_id,)).fetchone()[0])
       if command == "all":
         flag_required = 0
@@ -180,6 +205,20 @@ class main(threading.Thread):
       return False
     
   def process_article(self, message_id):
+    self.log("processing %s.." % message_id, 4)
+    try:
+      valid = int(self.censordb.execute("SELECT valid FROM signature_cache WHERE message_uid = ?", (message_id,)).fetchone()[0])
+      if not valid:
+        return False
+      f = open(os.path.join("articles", message_id), 'r')
+      try:
+        self.parse_article(f, message_id)
+      except Exception as e:
+        self.log('something went wrong while parsing %s: %s' %(message_id, e), 1)
+        f.close()
+      return True
+    except Exception as e:
+      pass
     public_key = None
     self.log("processing %s.." % message_id, 3)
     f = open(os.path.join("articles", message_id), 'r')
@@ -205,30 +244,57 @@ class main(threading.Thread):
       self.log("found valid signature: %s" % message_id, 3)
       self.log("seeking from %i back to %i" % (f.tell(), bodyoffset), 4)
       f.seek(bodyoffset)
+      self.censordb.execute('INSERT INTO signature_cache (message_uid, valid) VALUES (?, ?)', (message_id, 1))
+      self.sqlite_censor_conn.commit()
     except Exception as e:
       if self.debug > 3:
         self.log("could not verify signature: %s: %s" % (message_id, e), 4)
       else:
         self.log("could not verify signature: %s" % message_id, 3)
       f.close()
+      self.censordb.execute('INSERT INTO signature_cache (message_uid, valid) VALUES (?, ?)', (message_id, 0))
+      self.sqlite_censor_conn.commit()
       return False
     self.parse_article(f, message_id, self.get_key_id(public_key))
     return True
 
   def get_key_id(self, public_key):
+    if public_key in self.key_cache:
+      return self.key_cache[public_key]
+    if len(self.key_cache) > 256:
+      self.key_cache = dict()
     try:
+      #self.log("should get key_id for public_key %s" % public_key, 1)
       key_id = int(self.censordb.execute("SELECT id FROM keys WHERE key = ?", (public_key,)).fetchone()[0])
     except Exception as e:
       self.censordb.execute("INSERT INTO keys (key, local_name, flags) VALUES (?, ?, ?)", (public_key, '', '0'))
       self.sqlite_censor_conn.commit()
       key_id = int(self.censordb.execute("SELECT id FROM keys WHERE key = ?", (public_key,)).fetchone()[0])
+    self.key_cache[public_key] = key_id
     return key_id
 
-  def parse_article(self, article_fd, message_id, key_id):
-    self.log("parsing %s.." % message_id, 3)
+  def parse_article(self, article_fd, message_id, key_id=None):
+    #counter = 0
+    #time_key_cache = float(0)
+    #time_allowed_cache = float(0)
+    #time_command_cache = float(0)
+    #time_fs = float(0)
+    #time_sql = float(0)
+    #time_mapper = float(0)
+    #time_mapper_sql = float(0)
+    #time_total = time.time()
+    self.log("parsing %s.." % message_id, 4)
+    if key_id == None:
+      for line in article_fd:
+        if len(line) == 1:
+          break
+        elif line.lower().startswith('x-pubkey-ed25519:'):
+          public_key = line.lower()[:-1].split(' ', 1)[1]
+      #timestamp_start = time.time()
+      key_id = self.get_key_id(public_key)
+      #time_key_cache += time.time() - timestamp_start
     sent = None
     for line in article_fd:
-      #print "skipping line %s" % line[:-1]
       if len(line) == 1:
         break
       elif line.lower().startswith('date:'):
@@ -243,31 +309,93 @@ class main(threading.Thread):
     if not sent:
       self.log("WARNING, received article does not contain a date: header. using current timestamp instead", 0)
       sent = int(time.time())
+    
+    #self.handle_line(line[:-1], key_id, sent)
+    #self.log("parsing %s, starting to parse commands" % message_id, 4)
+    redistributors = dict()
+    
     for line in article_fd:
-      #print "parsing line %s" % line[:-1]
       if len(line) == 1:
         continue
-      self.handle_line(line[:-1], key_id, sent)
+      line = line.split('\n')[0]
+      command = line.lower().split(" ", 1)[0]
+      if not command in self.command_mapper:
+        self.log("got unknown command: %s" % line, 3)
+        continue
+      #counter += 1
+      if '#' in line:
+        line, comment = line.split("#", 1)
+        line = line.rstrip(" ")
+      else:
+        comment = ''
+      #timestamp_start = time.time()
+      if self.allowed(key_id, command):
+        #time_allowed_cache += time.time() - timestamp_start
+        #timestamp_start = time.time()
+        #data, groups, time_fs_tmp, time_mapper_sql_tmp = self.command_mapper[command](line, debug=True)
+        data, groups = self.command_mapper[command](line)
+        #time_fs += time_fs_tmp
+        #time_mapper_sql += time_mapper_sql_tmp
+        #time_mapper += time.time() - timestamp_start
+        accepted = 1
+        reason_id = 2
+        if groups:
+          for group in groups:
+            if group in redistributors:
+              redistributors[group].append(line)
+              continue
+            redistributors[group] = list()
+            redistributors[group].append(line)
+      else:
+        #time_allowed_cache += time.time() - timestamp_start
+        data = line.lower().split(" ", 1)[1]
+        accepted = 0
+        reason_id = 1
+        self.log("not authorized for '%s': %i" % (command, key_id), 4)
+      #timestamp_start = time.time()  
+      if command in self.command_cache:
+        #time_command_cache += time.time() - timestamp_start
+        command_id = self.command_cache[command]
+      else: 
+        #time_command_cache += time.time() - timestamp_start
+        command_id = int(self.censordb.execute("SELECT id FROM commands WHERE command = ?", (command,)).fetchone()[0])
+        self.command_cache[command] = command_id
+      try:
+        #timestamp_start = time.time()
+        self.censordb.execute('INSERT INTO log (accepted, command_id, data, key_id, reason_id, comment, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)', (accepted, command_id, data, key_id, reason_id, comment, int(time.time())))
+        self.sqlite_censor_conn.commit()
+        #time_sql += time.time() - timestamp_start
+      except Exception as e:
+        #time_sql += time.time() - timestamp_start
+        #self.log('inserting failed as expected: %s' % e, 4)
+        pass
     article_fd.close()
+    for group in redistributors:
+      self.redistribute_command(group, '\n'.join(redistributors[group]), None, sent)
+    #time_total = time.time() - time_total
+    #if counter > 50:
+    #  self.log("done parsing, commands: %i. mapper: %f, mapper_fs: %f, mapper_sql: %f, key_cache: %f, allowed_cache: %f, command_cache: %f, sql: %f, other: %f" % (counter, time_mapper, time_fs, time_mapper_sql, time_key_cache, time_allowed_cache, time_command_cache, time_sql, time_total - time_fs - time_mapper_sql - time_key_cache - time_allowed_cache - time_command_cache - time_sql), 1)
 
-  def redistribute_command(self, groups, line, comment, timestamp):
+  def redistribute_command(self, group, line, comment, timestamp):
+    # FIXME needs a hooks cache dict with key group => list hooks
+    
     hooks = dict()
-    for group in groups:
-      # whitelist
-      for group_item in self.SRNd.hooks:
-        if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
-          for hook in self.SRNd.hooks[group_item]:
-            hooks[hook] = (line, timestamp)
-      # blacklist
-      for group_item in self.SRNd.hook_blacklist:
-        if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
-          for hook in self.SRNd.hook_blacklist[group_item]:
-            if hook in hooks:
-              del hooks[hook]
+    # whitelist
+    for group_item in self.SRNd.hooks:
+      if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
+        for hook in self.SRNd.hooks[group_item]:
+          hooks[hook] = (line, timestamp)
+    # blacklist
+    for group_item in self.SRNd.hook_blacklist:
+      if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
+        for hook in self.SRNd.hook_blacklist[group_item]:
+          if hook in hooks:
+            del hooks[hook]
 
     # FIXME 1) crossposting may match multiple times and thus deliver same hook multiple times
     # FIXME 2) if doing this block after group loop blacklist may filter valid hook from another group
     # FIXME currently doing the second variant
+    
     for hook in hooks:
       if hook.startswith('plugins-'):
         name = 'plugin-' + hook[8:]
@@ -288,26 +416,31 @@ class main(threading.Thread):
       line = line.rstrip(" ")
     else:
       comment = '' 
-    if command in self.command_mapper:
-      if self.allowed(key_id, command):
-        data, groups = self.command_mapper[command](line)
-        accepted = 1
-        reason_id = 2
-        if groups:
-          self.redistribute_command(groups, line, comment, timestamp)
-      else:
-        data = line.lower().split(" ", 1)[1]
-        accepted = 0
-        reason_id = 1
-        self.log("not authorized for '%s': %i" % (command, key_id), 3)
-      command_id = int(self.censordb.execute("SELECT id FROM commands WHERE command = ?", (command,)).fetchone()[0])
-      try:
-        self.censordb.execute('INSERT INTO log (accepted, command_id, data, key_id, reason_id, comment, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)', (accepted, command_id, data, key_id, reason_id, comment, int(time.time())))
-        self.sqlite_censor_conn.commit()
-      except Exception as e:
-        pass
+    if not command in self.command_mapper:
+      self.log("got unknown command: %s" % line, 3)
+      return
+    if self.allowed(key_id, command):
+      data, groups = self.command_mapper[command](line)
+      accepted = 1
+      reason_id = 2
+      if groups:
+        for group in groups:
+          self.redistribute_command(group, line, comment, timestamp)
     else:
-      self.log("got unknown command: %s" % line, 2)
+      data = line.lower().split(" ", 1)[1]
+      accepted = 0
+      reason_id = 1
+      self.log("not authorized for '%s': %i" % (command, key_id), 3)
+    if command in self.command_cache:
+      command_id = self.command_cache[command]
+    else: 
+      command_id = int(self.censordb.execute("SELECT id FROM commands WHERE command = ?", (command,)).fetchone()[0])
+      self.command_cache[command] = command_id
+    try:
+      self.censordb.execute('INSERT INTO log (accepted, command_id, data, key_id, reason_id, comment, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)', (accepted, command_id, data, key_id, reason_id, comment, int(time.time())))
+      self.sqlite_censor_conn.commit()
+    except Exception as e:
+      pass
 
   def handle_srnd_acl_mod(self, line):
     try:
@@ -319,29 +452,49 @@ class main(threading.Thread):
       self.log("could not handle srnd-acl-mod: %s" % e, 1)
     return (key, None)
 
-  def handle_delete(self, line):
-    self.log("got deletion request: %s" % line, 3)
+  def handle_delete(self, line, debug=False):
+    #time_fs = float(0)
+    #time_sql = float(0)
+    #self.log("got deletion request: %s" % line, 3)
     command, message_id = line.split(" ", 1)
     self.log("should delete %s" % message_id, 3)
+    
+    #timestamp_start = time.time()
     if os.path.exists(os.path.join("articles", "restored", message_id)):
-      # TODO if admin wants to delete a restored article we need to check for timestamp here as well
+      #time_fs += time.time() - timestamp_start
       self.log("%s has been restored, ignoring delete" % message_id, 2)
-      # FIXME return None instead of empty list will stop plugins (overchan) to process and ignore the message as well
-      return (message_id, list())
+      #if debug:
+      #  return (message_id, None, time_fs, time_sql)
+      return (message_id, None)
+
+    groups = list()
+    group_rows = list()
+    #timestamp_start = time.time()
+    for row in self.dropperdb.execute('SELECT group_name, article_id from articles, groups WHERE message_id=? and groups.group_id = articles.group_id', (message_id,)).fetchall():
+      group_rows.append((row[0], row[1]))
+      groups.append(row[0])
+    #time_sql += time.time() - timestamp_start
+    #timestamp_start = time.time()
+    if os.path.exists(os.path.join('articles', 'censored', message_id)):
+      #time_fs += time.time() - timestamp_start
+      self.log("already deleted, still handing over to redistribute further", 4)
     elif os.path.exists(os.path.join("articles", message_id)):
+      #time_fs += time.time() - timestamp_start
       self.log("moving %s to articles/censored/" % message_id, 3)
       os.rename(os.path.join("articles", message_id), os.path.join("articles", "censored", message_id))
+      self.log("deleting groups/%s/%i" % (row[0], row[1]), 3)
+      for group in group_rows:
+        try:
+          # FIXME race condition with dropper if currently processing this very article
+          os.unlink(os.path.join("groups", str(group[0]), str(group[1])))
+        except Exception as e:
+          self.log("could not delete: %s" % e, 3)
     elif not os.path.exists(os.path.join('articles', 'censored', message_id)):
+      #time_fs += time.time() - timestamp_start
       f = open(os.path.join('articles', 'censored', message_id), 'w')
       f.close()
-    groups = list()
-    for row in self.dropperdb.execute('SELECT group_name, article_id from articles, groups WHERE message_id=? and groups.group_id = articles.group_id', (message_id,)).fetchall():
-      groups.append(row[0])
-      self.log("deleting groups/%s/%i" % (row[0], row[1]), 3)
-      try:
-        os.unlink(os.path.join("groups", str(row[0]), str(row[1])))
-      except Exception as e:
-        self.log("could not delete: %s" % e, 3)
+    #if debug:
+    #  return (message_id, groups, time_fs, time_sql)
     return (message_id, groups)
   
   def handle_board_add(self, line):
