@@ -36,41 +36,14 @@
         text-align: center;
         padding-left: 10px;
       }
-      div {
+      .box {
         border: 1px dotted #AFAFAF;
       }
     </style>
   </head>
   <body class="mod">
     %%navigation%%
-    <div>
-      <b>known public keys</b>
-      <table border="0px">
-        <tr>
-          <th>&nbsp;</th>
-          <th class="data_center">local_alias</th>
-          <th class="data_center">count</th>
-  %%flag_names%%
-          <th>&nbsp;</th>
-        </tr>
-        %%mod_whitelist%%
-      </table>
-    </div>
-    <br />
-    <div>
-      <b>key stats</b>
-      <table border="0px">
-        <tr>
-          <th>&nbsp;</th>
-          <th class="data_center">local_alias</th>
-          <th class="data_center" colspan="2">accepted_by_trusted_keys</th>
-          <th>&nbsp;</th>
-        </tr>
-        %%mod_unknown%%
-      </table>
-    </div>
-    <br />
-    <div>
+    <div class="box">
       <b>moderation accepted log</b>
       <table class="mod_accepted">
         <tr>
@@ -86,7 +59,7 @@
       </table>
     </div>
     <br />
-    <div>
+    <div class="box">
       <b>moderation ignored log</b>
       <table class="mod_ignored">
         <tr>
@@ -101,5 +74,8 @@
         %%mod_ignored%%
       </table>
     </div>
+    <br />
+    %%pagination%%
+    <br />
   </body>
 </html>

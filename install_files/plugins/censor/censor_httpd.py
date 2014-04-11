@@ -64,15 +64,16 @@ class censor(BaseHTTPRequestHandler):
         if (flags_available & flag_required) != flag_required:
           self.send_redirect(self.root_path, "not authorized, flag srnd-acl-mod flag missing.<br />redirecting you in a moment.", 7)
           return
+        if key == 'create':
+          self.send_modify_key(key, create_key=True)
+          return
         try:
           self.handle_update_key(key)
           self.send_redirect(self.root_path, "update ok<br />redirecting you in a moment.", 4)
         except Exception as e:
           self.send_redirect(self.root_path, "update failed: %s<br />redirecting you in a moment." % e, 10)
-      elif path == "/foo":
-        self.die("POST bar")
       else:
-        self.send_log()
+        self.send_keys()
       return
     self.origin.log("illegal access: {0}".format(self.path), 2)
     self.send_response(200)
@@ -103,14 +104,21 @@ class censor(BaseHTTPRequestHandler):
       if path.startswith('/modify?'):
         key = path[8:]
         self.send_modify_key(key)
-      elif path.startswith('/pic_log') or path.startswith("/piclog"):
+      elif path.startswith('/pic_log'):
         page = 1
         if '?' in path:
           try: page = int(path.split('?')[-1])
           except: pass
           if page < 1: page = 1 
         self.send_piclog(page)
-      elif path.startswith('/message_log') or path.startswith('/messagelog'):
+      elif path.startswith('/moderation_log'):
+        page = 1
+        if '?' in path:
+          try: page = int(path.split('?')[-1])
+          except: pass
+          if page < 1: page = 1 
+        self.send_log(page)
+      elif path.startswith('/message_log'):
         self.send_messagelog()
       elif path.startswith('/stats'):
         self.send_stats()
@@ -128,10 +136,8 @@ class censor(BaseHTTPRequestHandler):
         self.handle_unblock_board(path[15:])
       elif path.startswith('/notimplementedyet'):
         self.send_error('not implemented yet')
-      elif path == "/foo":
-        self.die("GET bar")
       else:
-        self.send_log()
+        self.send_keys()
       return
     self.origin.log("illegal access: {0}".format(self.path), 2)
     self.send_response(200)
@@ -204,24 +210,35 @@ class censor(BaseHTTPRequestHandler):
     self.end_headers()
     self.wfile.write('<html><head><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod"><center>%s<br /><form action="/moderate?auth" enctype="multipart/form-data" method="POST"><label>your secret</label>&nbsp;<input type="text" name="secret" style="width: 400px;"/><input type="submit" /></form></html></html>' % message)
 
-  def send_modify_key(self, key):
+  def send_modify_key(self, key, create_key=False):    
+    if create_key:
+      post_vars = FieldStorage(
+        fp=self.rfile,
+        headers=self.headers,
+        environ={
+          'REQUEST_METHOD':'POST',
+          'CONTENT_TYPE':self.headers['Content-Type'],
+        }
+      )
+      key = post_vars.getvalue('new_key', '')
+      try:
+        vk = nacl.signing.VerifyKey(unhexlify(key))
+        del vk
+      except Exception as e:
+        self.die("invalid key: %s" % e)
+        return
+    
+    row = self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE key = ?", (key,)).fetchone()
+    if not row:
+      if not create_key:
+        self.die("key not found")
+        return
+      row = (key, '', 0, 0)
+
     out = self.origin.template_modify_key
     flags = self.origin.sqlite_censor.execute("SELECT command, flag FROM commands").fetchall()
     cur_template = self.origin.template_log_flagnames
-    #table = list()
-    #for flag in flags:
-    #  current_flag = flag[0]
-    #  if "-" in current_flag:
-    #    current_flag = current_flag.split("-", 1)[1]
-    #  table.append(cur_template.replace("%%flag%%", current_flag))
-    #out = out.replace("%%flag_names%%", "\n".join(table))
-    #del table[:]
-    
     flaglist = list()
-    row = self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE key = ?", (key,)).fetchone()
-    if not row:
-      self.die("key not found")
-      return
     flagset_template = self.origin.template_modify_key_flagset
     out = out.replace("%%key%%", row[0])
     out = out.replace("%%nick%%", row[1])
@@ -247,11 +264,70 @@ class censor(BaseHTTPRequestHandler):
     self.end_headers()
     self.wfile.write(out)    
 
-  def send_log(self):
-    out = self.origin.template_log
-    out = out.replace('%%navigation%%', ''.join(self.__get_navigation('moderation_log')))
+  def send_keys(self):
+    out = self.origin.template_keys
+    create_key = '<div style="float:right;"><form action="modify?create" enctype="multipart/form-data" method="POST"><input name="new_key" type="text" class="posttext"><input type="submit" class="postbutton" value="add key"></form></div>'
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('key_stats', add_after=create_key)))
     table = list()    
-    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 1 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
+    flags = self.origin.sqlite_censor.execute("SELECT command, flag FROM commands").fetchall()
+    cur_template = self.origin.template_log_flagnames
+    for flag in flags:
+      current_flag = flag[0]
+      if "-" in current_flag:
+        current_flag = current_flag.split("-", 1)[1]
+      table.append(cur_template.replace("%%flag%%", current_flag))
+    out = out.replace("%%flag_names%%", "\n".join(table))
+    del table[:]
+    flagset_template = self.origin.template_log_flagset
+    flaglist = list()
+    #for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags, count(key_id) as counter FROM keys, log WHERE (flags != 0 OR local_name != "") AND keys.id = log.key_id GROUP BY key_id ORDER by counter DESC').fetchall():
+    for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags FROM keys WHERE flags != 0 OR local_name != "" ORDER BY abs(flags) DESC, local_name ASC').fetchall():
+      cur_template = self.origin.template_log_whitelist
+      cur_template = cur_template.replace("%%key%%", row[0])
+      cur_template = cur_template.replace("%%nick%%", row[1])
+      #table.append(self.origin.template_log_flagset)
+      for flag in flags:
+        if (int(row[2]) & int(flag[1])) == int(flag[1]):
+          flaglist.append(flagset_template.replace("%%flag%%", "y"))
+        else:
+          flaglist.append(flagset_template.replace("%%flag%%", "n"))
+      cur_template = cur_template.replace("%%flagset%%", "\n".join(flaglist))
+      del flaglist[:]
+      #cur_template = cur_template.replace("%%count%%", str(row[3]))
+      table.append(cur_template)
+    out = out.replace("%%mod_whitelist%%", "\n".join(table))
+    del table[:]
+    #for row in self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE flags = 0").fetchall():
+    for row in self.origin.sqlite_censor.execute('SELECT local_name, key, count(key_id) as counter, key_id FROM log, keys WHERE data in (SELECT data FROM log WHERE accepted = 1) AND keys.id = key_id GROUP by key_id ORDER BY counter DESC').fetchall():
+      cur_template = self.origin.template_log_unknown
+      cur_template = cur_template.replace("%%key%%", row[1])
+      if row[0] != "":
+        cur_template = cur_template.replace("%%nick%%", row[0])
+      else:
+        cur_template = cur_template.replace("%%nick%%", "&nbsp;")
+      count = self.origin.sqlite_censor.execute("SELECT count(data) FROM log WHERE key_id = ?", (row[3],)).fetchone()
+      cur_template = cur_template.replace("%%accepted_by_trusted_count%%", str(row[2]))
+      cur_template = cur_template.replace("%%accepted_by_trusted_total%%", str(count[0]))
+      cur_template = cur_template.replace("%%accepted_by_trusted_percentage%%", "%.2f" % (float(row[2]) / count[0] * 100))
+      table.append(cur_template)
+    out = out.replace("%%mod_unknown%%", "\n".join(table))
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    self.wfile.write(out)
+
+  def send_log(self, page=1, pagecount=100):
+    out = self.origin.template_log
+    pagination = '<div style="float:right;">'
+    if page > 1:
+      pagination += '<a href="moderation_log?%i">previous</a>' % (page-1)
+    else:
+      pagination += 'previous'
+    pagination += '&nbsp;<a href="moderation_log?%i">next</a></div>' % (page+1)
+    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('moderation_log', add_after=pagination)))
+    out = out.replace('%%pagination%%', pagination)
+    table = list()    
+    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 1 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC LIMIT ?, ?", ((page-1)*pagecount, pagecount)).fetchall():
       cur_template = self.origin.template_log_accepted
       if row[1] != "":
         cur_template = cur_template.replace("%%key_or_nick%%", row[1])
@@ -294,7 +370,7 @@ class censor(BaseHTTPRequestHandler):
       table.append(cur_template)
     out = out.replace("%%mod_accepted%%", "\n".join(table))
     del table[:]    
-    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 0 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC").fetchall():
+    for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 0 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC LIMIT ?, ?", ((page-1)*pagecount, pagecount)).fetchall():
       cur_template = self.origin.template_log_ignored
       if row[1] != "":
         cur_template = cur_template.replace("%%key_or_nick%%", row[1])
@@ -315,53 +391,13 @@ class censor(BaseHTTPRequestHandler):
       table.append(cur_template)
     out = out.replace("%%mod_ignored%%", "\n".join(table))
     del table[:]
-    flags = self.origin.sqlite_censor.execute("SELECT command, flag FROM commands").fetchall()
-    cur_template = self.origin.template_log_flagnames
-    for flag in flags:
-      current_flag = flag[0]
-      if "-" in current_flag:
-        current_flag = current_flag.split("-", 1)[1]
-      table.append(cur_template.replace("%%flag%%", current_flag))
-    out = out.replace("%%flag_names%%", "\n".join(table))
-    del table[:]
-    flagset_template = self.origin.template_log_flagset
-    flaglist = list()
-    for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags, count(key_id) as counter FROM keys, log WHERE (flags != 0 OR local_name != "") AND keys.id = log.key_id GROUP BY key_id ORDER by counter DESC').fetchall():
-      cur_template = self.origin.template_log_whitelist
-      cur_template = cur_template.replace("%%key%%", row[0])
-      cur_template = cur_template.replace("%%nick%%", row[1])
-      #table.append(self.origin.template_log_flagset)
-      for flag in flags:
-        if (int(row[2]) & int(flag[1])) == int(flag[1]):
-          flaglist.append(flagset_template.replace("%%flag%%", "y"))
-        else:
-          flaglist.append(flagset_template.replace("%%flag%%", "n"))
-      cur_template = cur_template.replace("%%flagset%%", "\n".join(flaglist))
-      del flaglist[:]
-      cur_template = cur_template.replace("%%count%%", str(row[3]))
-      table.append(cur_template)
-    out = out.replace("%%mod_whitelist%%", "\n".join(table))
-    del table[:]
-    #for row in self.origin.sqlite_censor.execute("SELECT key, local_name, flags, id FROM keys WHERE flags = 0").fetchall():
-    for row in self.origin.sqlite_censor.execute('SELECT local_name, key, count(key_id) as counter, key_id FROM log, keys WHERE data in (SELECT data FROM log WHERE accepted = 1) AND keys.id = key_id GROUP by key_id ORDER BY counter DESC').fetchall():
-      cur_template = self.origin.template_log_unknown
-      cur_template = cur_template.replace("%%key%%", row[1])
-      if row[0] != "":
-        cur_template = cur_template.replace("%%nick%%", row[0])
-      else:
-        cur_template = cur_template.replace("%%nick%%", "&nbsp;")
-      count = self.origin.sqlite_censor.execute("SELECT count(data) FROM log WHERE key_id = ?", (row[3],)).fetchone()
-      cur_template = cur_template.replace("%%accepted_by_trusted_count%%", str(row[2]))
-      cur_template = cur_template.replace("%%accepted_by_trusted_total%%", str(count[0]))
-      cur_template = cur_template.replace("%%accepted_by_trusted_percentage%%", "%.2f" % (float(row[2]) / count[0] * 100))
-      table.append(cur_template)
-    out = out.replace("%%mod_unknown%%", "\n".join(table))
+
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
     self.wfile.write(out)
     
-  def send_piclog(self, page=1):
+  def send_piclog(self, page=1, pagecount=30):
     #out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%'
     out = '<html><head><title>piclog</title><link type="text/css" href="/styles.css" rel="stylesheet"></head>\n<body class="mod">\n%%navigation%%\n'
     pagination = '<div style="float:right;">'
@@ -374,7 +410,7 @@ class censor(BaseHTTPRequestHandler):
     table = list()
     table.append(out.replace("%%pagination%%", pagination))
     #self.wfile.write(out)
-    for row in self.origin.sqlite_overchan.execute('SELECT * FROM (SELECT thumblink, parent, article_uid, last_update, sent FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC) ORDER by sent DESC LIMIT ?, 30', ((page-1)*30,)).fetchall():
+    for row in self.origin.sqlite_overchan.execute('SELECT * FROM (SELECT thumblink, parent, article_uid, last_update, sent FROM articles WHERE thumblink != "" AND thumblink != "invalid" AND thumblink != "document" ORDER BY last_update DESC) ORDER by sent DESC LIMIT ?, ?', ((page-1)*pagecount, pagecount)).fetchall():
       cur_template = '<a href="/%%target%%" target="_blank"><img src="%%thumblink%%" class="image" style="height: 200px;" /></a>'
       if row[1] == '' or row[1] == row[2]:
         target = 'thread-%s.html' % sha1(row[2]).hexdigest()[:10]
@@ -614,7 +650,7 @@ class censor(BaseHTTPRequestHandler):
       elif status:
         groups.append((row[0], row[1], row[3]))
       else:
-        groups.append((row[0], row[1]))
+        groups.append((row[0], row[1].replace(',', ',<br />')))
     return groups
 
   def __stats_usage_by_frontend(self, days=7, bar_length=29):    
@@ -701,7 +737,7 @@ class censor(BaseHTTPRequestHandler):
   def __get_navigation(self, current, add_after=None):
     out = list()
     #out.append('<div class="navigation">')
-    for item in (('moderation_log', 'moderation log'), ('pic_log', 'pic log'), ('message_log', 'message log'),('stats', 'stats'), ('settings', 'settings')):
+    for item in (('key_stats', 'key stats'), ('moderation_log', 'moderation log'), ('pic_log', 'pic log'), ('message_log', 'message log'),('stats', 'stats'), ('settings', 'settings')):
       if item[0] == current:
         out.append(item[1] + '&nbsp;')
       else:
@@ -896,6 +932,9 @@ class censor_httpd(threading.Thread):
     # read templates
     self.log('reading templates..', 3)
     template_directory = args['template_directory']
+    f = open(os.path.join(template_directory, 'keys.tmpl'), 'r')
+    self.httpd.template_keys = f.read()
+    f.close()
     f = open(os.path.join(template_directory, 'log.tmpl'), 'r')
     self.httpd.template_log = f.read()
     f.close()

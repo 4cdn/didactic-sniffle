@@ -443,9 +443,14 @@ class main(threading.Thread):
       pass
 
   def handle_srnd_acl_mod(self, line):
+    self.log("handle acl_mod: %s" % line, 5)
     try:
       key, flags, local_nick = line.split(" ", 3)[1:]
-      self.censordb.execute("UPDATE keys SET local_name = ?, flags = ? WHERE key = ?", (local_nick, flags, key))
+      if int(self.censordb.execute('SELECT count(key) FROM keys WHERE key = ?', (key,)).fetchone()[0]) == 0:
+        self.log("handle acl_mod: new key", 4)
+        self.censordb.execute("INSERT INTO keys (key, local_name, flags) VALUES (?, ?, ?)", (key, local_nick, flags))
+      else:  
+        self.censordb.execute("UPDATE keys SET local_name = ?, flags = ? WHERE key = ?", (local_nick, flags, key))
       self.sqlite_censor_conn.commit()
       self.allowed_cache = dict()
     except Exception as e:
