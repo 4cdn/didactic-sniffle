@@ -288,7 +288,7 @@ class censor(BaseHTTPRequestHandler):
       #table.append(self.origin.template_log_flagset)
       for flag in flags:
         if (int(row[2]) & int(flag[1])) == int(flag[1]):
-          flaglist.append(flagset_template.replace("%%flag%%", "y"))
+          flaglist.append(flagset_template.replace("%%flag%%", '<b style="color: #00E000;">y</b>'))
         else:
           flaglist.append(flagset_template.replace("%%flag%%", "n"))
       cur_template = cur_template.replace("%%flagset%%", "\n".join(flaglist))
