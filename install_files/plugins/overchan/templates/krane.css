@@ -166,7 +166,7 @@
         display: inline;
       }
       .overlay {
-        position: absolute;
+        position: fixed;
         top: 0px;
         bottom: 0px;
         left: 0px;
@@ -178,7 +178,7 @@
         text-align: center;
       }
       .lblhelp {
-        position: absolute;
+        position: fixed;
         top: 0px;
         right: 10px;
         cursor: pointer;
@@ -192,12 +192,16 @@
       }
       .overlay_inner {
         position: absolute;
-        left: 25%;
-        top: 15%;
-        width: 50%;
+        left: 5%;
+        width: 90%;
+        height: 500px;
         background: #0A0A0A;
         border: 1px solid #454545;
         text-align: left;
+        overflow: auto;
+      }
+      .overlaytext {
+        font-weight: bold;
       }
       .quote {
         color: #00AA00;
