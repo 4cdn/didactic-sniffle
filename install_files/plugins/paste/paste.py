@@ -28,6 +28,9 @@ class main(threading.Thread):
     self.name = thread_name
     self.should_terminate = False
     self.debug = 5
+    # TODO: move sleep stuff to config table    
+    self.sleep_threshold = 10
+    self.sleep_time = 0.02
     error = ''
     for arg in ('template_directory', 'output_directory', 'database_directory', 'css_file', 'title'):
       if not arg in args:
@@ -213,6 +216,8 @@ class main(threading.Thread):
           self.handle_control(ret[1], ret[2])
         else:
           self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
+        if self.queue.qsize() > self.sleep_threshold:
+          time.sleep(self.sleep_time)
       except Queue.Empty as e:
         if got_control:
           self.sqlite_conn.commit()
