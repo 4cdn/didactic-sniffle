@@ -20,6 +20,9 @@ class main(threading.Thread):
   def __init__(self, thread_name, args):
     threading.Thread.__init__(self)
     self.name = thread_name
+    # TODO: move sleep stuff to config table
+    self.sleep_threshold = 10
+    self.sleep_time = 0.05
     if 'debug' not in args:
       self.debug = 2
       self.log('debuglevel not defined, using default of debug = 2', 2)
@@ -50,7 +53,7 @@ class main(threading.Thread):
     self.log('initializing censor_httpd..', 3)
     args['censor'] = self
     self.httpd = censor_httpd.censor_httpd("censor_httpd", args)
-    self.db_version = 2
+    self.db_version = 3
     self.all_flags = "511"
     self.queue = Queue.Queue()
     self.command_mapper = dict()
@@ -121,6 +124,11 @@ class main(threading.Thread):
       self.censordb.execute('UPDATE config SET value = "2" WHERE key = "db_version"')
       self.sqlite_censor_conn.commit()
       current_version = 2
+    if current_version == 2:
+      self.log("updating db from version %i to version %i" % (current_version, 3), 1)
+      self.censordb.execute("CREATE UNIQUE INDEX IF NOT EXISTS sig_cache_message_uid_idx ON signature_cache(message_uid);")
+      self.censordb.execute('UPDATE config SET value = "3" WHERE key = "db_version"')
+      self.sqlite_censor_conn.commit()
 
   def run(self):
     #if self.should_terminate:
@@ -146,36 +154,23 @@ class main(threading.Thread):
         self.sqlite_censor_conn.commit()
       except Exception as e:
         pass
-    #start_time = int(time.time())
-    #max_time = 0
-    #count = 0
-    #max_time_message_id = ''
-    #self.log("starting processing at %i" % start_time, 1)
     self.running = True
     while self.running:
       try:
         source, data = self.queue.get(block=True, timeout=1)
-        #p_start = int(time.time())
         if source == "article":
           self.process_article(data)
-          #p_dur = int(time.time()) - p_start
-          #count += 1
-          #if p_dur > max_time:
-          #  max_time = p_dur
-          #  max_time_message_id = data
-          #if not count % 100:
-          #  self.log('current stats after %i articles: %.2f seconds/article, max_time %i for %s' % (count, float(int(time.time())-start_time)/count, max_time, max_time_message_id), 5)
         elif source == "httpd":
-          #self.log("got source httpd: %s" % str(data), 1)
           public_key, data = data
           key_id = self.get_key_id(public_key)
           timestamp = int(time.time())
-          #self.log("got source httpd: public_key: '%s'; data: '%s'" % (public_key, str(data)), 1)
           for line in data.split("\n"):
             self.handle_line(line, key_id, timestamp)
+        else:
+          self.log('unknown source: %s' % source, 3)
+        if self.queue.qsize() > self.sleep_threshold:
+          time.sleep(self.sleep_time)
       except Queue.Empty as e:
-        #end_time = int(time.time())
-        #self.log("finally done processing at %i, took %i seconds for %i articles. longest time was %i for %s" % (end_time, end_time-start_time, count, max_time, max_time_message_id), 1)
         pass
     self.sqlite_censor_conn.close()
     self.sqlite_dropper_conn.close()
@@ -313,7 +308,7 @@ class main(threading.Thread):
     #self.handle_line(line[:-1], key_id, sent)
     #self.log("parsing %s, starting to parse commands" % message_id, 4)
     redistributors = dict()
-    
+
     for line in article_fd:
       if len(line) == 1:
         continue
