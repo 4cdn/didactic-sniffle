@@ -3,25 +3,25 @@
    
 <html>
   <head>
-    <title>%%title%% :: %%board%%</title>
+    <title>${title} :: ${board}</title>
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <link rel="stylesheet" href="styles.css" type="text/css">
     <link rel="stylesheet" href="user.css" type="text/css">
   </head>
   <body>
-    <div class="boards">[%%boardlist%%]</div>
+    <div class="boards">[${boardlist}]</div>
     <hr />
     <div class="sitetitle">
-      <h2><a href="overview.html">%%title%%</a></h2>
+      <h2><a href="overview.html">${title}</a></h2>
       <b>decentralized and distributed</b>
     </div>
-    <center><div class="pagelist">Pages: %%pagelist%%</div></center>
+    <center><div class="pagelist">Pages: ${pagelist}</div></center>
     <div class="postform" align="center">
       <form method="POST" action="/incoming" enctype="multipart/form-data">
         <input type="hidden" name="frontend" value="overchan" />
-        <input type="hidden" name="board" value="%%full_board%%" />
+        <input type="hidden" name="board" value="${full_board}" />
         <input type="hidden" name="reply" value="" />
-        <input type="hidden" name="target" value="%%target%%" />
+        <input type="hidden" name="target" value="${target}" />
         <table cellspacing="1" cellpadding="0">
           <tr>
             <th>Name</th>
@@ -58,19 +58,19 @@
       <span class="overlaytext">What the fuck is this?</span>
       <label for="chkhelp" class="lblhelp">x</label>
       <div class="overlay_inner">
-        <span class="message_span">%%help%%</span>
+        <span class="message_span">${help}</span>
       </div>
     </div>
     <div class="evilstuff">
       <label>secret</label><!--&nbsp;[<a href="/moderate?getkey" target="_blank">?</a>]-->
-      <input type="hidden" name="target" value="%%target%%" />
+      <input type="hidden" name="target" value="${target}" />
       <input type="text" title="secret" name="secret" class="posttext" />
       <input type="submit" value="be evil" class="postbutton" />
     </div>
     <hr />
-%%threads%%
+${threads}
     </form>
-    <div class="pagelist">Pages: %%pagelist%%</div>
+    <div class="pagelist">Pages: ${pagelist}</div>
     <hr />
   </body>
 </html>

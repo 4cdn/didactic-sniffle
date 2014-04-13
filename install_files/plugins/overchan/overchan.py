@@ -28,6 +28,10 @@ class main(threading.Thread):
     threading.Thread.__init__(self)
     self.name = thread_name
     self.should_terminate = False
+    
+    # TODO: move sleep stuff to config table
+    self.sleep_threshold = 10
+    self.sleep_time = 0.02
 
     error = ''
     for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title'):
@@ -129,33 +133,13 @@ class main(threading.Thread):
       if args['sync_on_startup'].lower() == 'true':
         self.sync_on_startup = True
     # TODO use tuple instead and load in above loop. seriously.
-    f = open(os.path.join(self.template_directory, 'board.tmpl'))
-    self.template_board = f.read()
-    f.close()
-    f = open(os.path.join(self.template_directory, 'board_threads.tmpl'))
-    self.template_board_threads = f.read()
-    f.close
-    f = open(os.path.join(self.template_directory, 'thread_single.tmpl'))
-    self.template_thread_single = f.read()
-    f.close
-    f = open(os.path.join(self.template_directory, 'message_root.tmpl'))
-    self.template_message_root = f.read()
-    f.close()
-    f = open(os.path.join(self.template_directory, 'message_child_pic.tmpl'))
-    self.template_message_child_pic = f.read()
-    f.close()
-    f = open(os.path.join(self.template_directory, 'message_child_nopic.tmpl'))
-    self.template_message_child_nopic = f.read()
-    f.close()
-    f = open(os.path.join(self.template_directory, 'signed.tmpl'))
-    self.template_signed = f.read()
-    f.close()
+    
+    # statics
     f = open(os.path.join(self.template_directory, 'help.tmpl'))
     self.template_help = f.read()
     f.close()
-    f = open(os.path.join(self.template_directory, 'overview.tmpl'))
-    self.template_overview = f.read()
-    f.close()
+    
+    # still to convert
     f = open(os.path.join(self.template_directory, 'stats_usage.tmpl'))
     self.template_stats_usage = f.read()
     f.close()
@@ -175,9 +159,67 @@ class main(threading.Thread):
     self.template_stats_boards_row = f.read()
     f.close()
     
+    # template_engines
+    f = open(os.path.join(self.template_directory, 'board.tmpl'))
+    self.t_engine_board = string.Template(
+      string.Template(f.read()).safe_substitute(
+        help=self.template_help,
+        title=self.html_title
+      )
+    )
+    f.close()
+    f = open(os.path.join(self.template_directory, 'thread_single.tmpl'))
+    self.t_engine_thread_single = string.Template(
+      string.Template(f.read()).safe_substitute(
+        help=self.template_help,
+        title=self.html_title
+      )
+    )
+    f.close
+    f = open(os.path.join(self.template_directory, 'overview.tmpl'))
+    self.t_engine_overview = string.Template(
+      string.Template(f.read()).safe_substitute(
+        help=self.template_help,
+        title=self.html_title
+      )
+    )
+    f.close()
+    f = open(os.path.join(self.template_directory, 'board_threads.tmpl'))
+    self.t_engine_board_threads = string.Template(f.read())
+    f.close
+    f = open(os.path.join(self.template_directory, 'message_root.tmpl'))
+    self.t_engine_message_root = string.Template(f.read())
+    f.close()
+    f = open(os.path.join(self.template_directory, 'message_child_pic.tmpl'))
+    self.t_engine_message_pic = string.Template(f.read())
+    f.close()
+    f = open(os.path.join(self.template_directory, 'message_child_nopic.tmpl'))
+    self.t_engine_message_nopic = string.Template(f.read())
+    f.close()
+    f = open(os.path.join(self.template_directory, 'signed.tmpl'))
+    self.t_engine_signed = string.Template(f.read())
+    f.close()
+    
     self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
     self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
     self.coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
+    
+    self.upper_table = {'0': '1',
+                        '1': '2',
+                        '2': '3',
+                        '3': '4',
+                        '4': '5',
+                        '5': '6',
+                        '6': '7',
+                        '7': '8',
+                        '8': '9',
+                        '9': 'a',
+                        'a': 'b',
+                        'b': 'c',
+                        'c': 'd',
+                        'd': 'e',
+                        'e': 'f',
+                        'f': 'g'}
 
     if __name__ == '__main__':
       i = open(os.path.join(self.template_directory, self.css_file), 'r')
@@ -340,6 +382,9 @@ class main(threading.Thread):
       self.sqlite.execute('ALTER TABLE groups ADD COLUMN blocked INTEGER DEFAULT 0')
     except:
       pass
+    self.sqlite.execute('CREATE INDEX IF NOT EXISTS articles_group_idx ON articles(group_id);')
+    self.sqlite.execute('CREATE INDEX IF NOT EXISTS articles_parent_idx ON articles(parent);')
+    self.sqlite.execute('CREATE INDEX IF NOT EXISTS articles_article_idx ON articles(article_uid);')
     self.sqlite_conn.commit()
     
     if self.regenerate_html_on_startup:
@@ -361,7 +406,7 @@ class main(threading.Thread):
     
   def handle_control(self, lines, timestamp):
     # FIXME how should board-add and board-del react on timestamps in the past / future
-    self.log("got control message: %s" % lines, 5)
+    self.log("got control message: %s" % lines, 4)
     root_posts = list()
     for line in lines.split("\n"):
       if line.lower().startswith('overchan-board-add'):
@@ -551,15 +596,24 @@ class main(threading.Thread):
           self.handle_control(ret[1], ret[2])
         else:
           self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
+
+        if self.queue.qsize() > self.sleep_threshold:
+          time.sleep(self.sleep_time)
       except Queue.Empty as e:
         if len(self.regenerate_boards) > 0:
+          do_sleep = len(self.regenerate_boards) > self.sleep_threshold
+          if do_sleep: self.log('boards: should sleep', 0)
           for board in self.regenerate_boards:
             self.generate_board(board)
+            if do_sleep: time.sleep(self.sleep_time)
           self.regenerate_boards = list()
           regen_overview = True
         if len(self.regenerate_threads) > 0:
+          do_sleep = len(self.regenerate_threads) > self.sleep_threshold
+          if do_sleep: self.log('threads: should sleep', 0)
           for thread in self.regenerate_threads:
             self.generate_thread(thread)
+            if do_sleep: time.sleep(self.sleep_time)
           self.regenerate_threads = list()
           regen_overview = True
         if regen_overview:
@@ -586,13 +640,13 @@ class main(threading.Thread):
       pub_short += '&#%i;' % (9600 + int(full_pubkey_hex[-(length*2):][x*2:x*2+2], 16))
     return pub_short
 
+  def upp_it(self, data):
+    if data[-1] not in self.upper_table:
+      return data
+    return data[:-1] + self.upper_table[data[-1]]
+    
   def linkit(self, rematch):
-    while True:
-      try:
-        row = self.db_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash like ?", (rematch.group(2) + "%",)).fetchall()
-        break;
-      except:
-        time.sleep(0.5)
+    row = self.db_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash >= ? and message_id_hash < ?", (rematch.group(2), self.upp_it(rematch.group(2)))).fetchall()
     if not row:
       # hash not found
       return rematch.group(0)
@@ -600,7 +654,6 @@ class main(threading.Thread):
       # multiple matches for that 10 char hash
       return rematch.group(0)
     message_id = row[0][0]
-    #print "got message_id:", message_id
     parent_row = self.sqlite.execute("SELECT parent FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
     if not parent_row:
       # not an overchan article (anymore)
@@ -610,6 +663,7 @@ class main(threading.Thread):
       # article is root post
       return '%s<a href="thread-%s.html">%s</a>' % (rematch.group(1), rematch.group(2), rematch.group(2))
     # article has a parent
+    # FIXME: cache results somehow?
     parent = sha1(parent_id).hexdigest()[:10]
     return '%s<a href="thread-%s.html#%s">%s</a>' % (rematch.group(1), parent, rematch.group(2), rematch.group(2))
   
@@ -893,10 +947,23 @@ class main(threading.Thread):
     return True
 
   def generate_board(self, group_id):
+    # FIXME: cache board_name, _unquoted, _full
     full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
     full_board_name = self.basicHTMLencode(full_board_name_unquoted)
     board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
     board_name = full_board_name.split('.', 1)[1]
+    boardlist = list()
+    # FIXME cache group list html globally like censor_httpd_navigation
+    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+      current_group_name_encoded = self.basicHTMLencode(current_group_name)
+      if group_row[1] != group_id:
+        boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
+      else:
+        boardlist.append('&nbsp;' + current_group_name_encoded + '&nbsp;|')
+    boardlist[-1] = boardlist[-1][:-1]
+    boardlist = ''.join(boardlist)
+    
     threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, 10*10)).fetchone()[0])
     pages = int(threads / 10)
     if threads % 10 != 0:
@@ -904,42 +971,27 @@ class main(threading.Thread):
     thread_counter = 0
     page_counter = 1
     threads = list()
+      
     for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ?', (group_id, 10*10)).fetchall():
-      root_message_id_hash = sha1(root_row[0]).hexdigest() # self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
-      #if hash_result:
-      #  root_message_id_hash = hash_result[0]
-      #else:
-      #  self.log('message hash for {0} not found. wtf?'.format(root_row[0]), 0)
-      #  continue
+      t_engine_mapper_root = dict() 
+      root_message_id_hash = sha1(root_row[0]).hexdigest()
       if thread_counter == 10:
         self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name_unquoted, page_counter), 2)
-        board_template = self.template_board.replace('%%help%%', self.template_help)
-        board_template = board_template.replace('%%title%%', self.html_title)
-        board_template = board_template.replace('%%threads%%', ''.join(threads))
+        t_engine_mapper_board = dict()
+        t_engine_mapper_board['threads'] = ''.join(threads)
         pagelist = list()
         for page in xrange(1, pages + 1):
           if page != page_counter:
             pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
           else:
             pagelist.append('[{0}]&nbsp;'.format(page))
-        board_template = board_template.replace('%%pagelist%%', ''.join(pagelist))
-        del pagelist
-        boardlist = list()
-        for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
-          current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
-          current_group_name_encoded = self.basicHTMLencode(current_group_name)
-          if group_row[1] != group_id:
-            boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
-          else:
-            boardlist.append('&nbsp;' + current_group_name_encoded + '&nbsp;|')
-        boardlist[-1] = boardlist[-1][:-1]
-        board_template = board_template.replace('%%boardlist%%', ''.join(boardlist))
-        board_template = board_template.replace('%%full_board%%', full_board_name_unquoted)
-        board_template = board_template.replace('%%board%%', board_name)
-        board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name_unquoted))
-        del boardlist
+        t_engine_mapper_board['pagelist'] = ''.join(pagelist)
+        t_engine_mapper_board['boardlist'] = boardlist
+        t_engine_mapper_board['full_board'] = full_board_name_unquoted
+        t_engine_mapper_board['board'] = board_name
+        t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
         f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
-        f.write(board_template)
+        f.write(self.t_engine_board.substitute(t_engine_mapper_board))
         f.close()
         threads = list()
         page_counter += 1
@@ -956,80 +1008,17 @@ class main(threading.Thread):
       else:
         root_imagelink = self.no_file
         root_thumblink = self.no_file
-      rootTemplate = self.template_message_root
-
       if root_row[8]:
         if root_row[8] != '':
-          rootTemplate = rootTemplate.replace('%%signed%%', self.template_signed)
-          rootTemplate = rootTemplate.replace('%%pubkey%%', root_row[8])
-          #TODO add startup_var to allow admin to configure format of short pubkey: UTF-8 or base 16
-          #rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[8][:3] + root_row[8][-3:])
-          rootTemplate = rootTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(root_row[8]))
+          t_engine_mapper_root['signed'] = self.t_engine_signed.substitute(
+            articlehash=root_message_id_hash[:10],
+            pubkey=root_row[8],
+            pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
+          ) 
         else:
-          rootTemplate = rootTemplate.replace('%%signed%%', '')
+          t_engine_mapper_root['signed'] = ''
       else:
-        rootTemplate = rootTemplate.replace('%%signed%%', '')
-      rootTemplate = rootTemplate.replace('%%articlehash%%', root_message_id_hash[:10])
-      rootTemplate = rootTemplate.replace('%%articlehash_full%%', root_message_id_hash)
-      rootTemplate = rootTemplate.replace('%%author%%', root_row[1])
-      rootTemplate = rootTemplate.replace('%%subject%%', root_row[2])
-      rootTemplate = rootTemplate.replace('%%sent%%', datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M'))
-      rootTemplate = rootTemplate.replace('%%imagelink%%', root_imagelink)
-      rootTemplate = rootTemplate.replace('%%thumblink%%', root_thumblink)
-      rootTemplate = rootTemplate.replace('%%imagename%%', root_row[5])
-      childs = list()
-      childs.append('')
-      child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], group_id)).fetchone()[0])
-      if child_count > 4:
-        missing = child_count - 4
-      else:
-        missing = 0
-      for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
-        #message_id_hash = sha1(child_row[0])hexdigest()[:10] #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (child_row[0],)).fetchone()
-        #if hash_result:
-        #  message_id_hash = hash_result[0]
-        #else:
-        #  self.log('message hash for {0} not found. wtf?'.format(child_row[0]), 0)
-        #  continue
-        if child_row[6] != '':
-          if child_row[7] == 'invalid':
-            child_thumblink = self.invalid_file
-          elif child_row[7] == 'document':
-            child_thumblink = self.document_file
-          else:
-            child_thumblink = child_row[7]
-          childTemplate = self.template_message_child_pic.replace('%%imagelink%%', child_row[6])
-          childTemplate = childTemplate.replace('%%thumblink%%', child_thumblink)
-          childTemplate = childTemplate.replace('%%imagename%%', child_row[5])
-        else:
-          childTemplate = self.template_message_child_nopic
-        if child_row[8]:
-          if child_row[8] != '':
-            childTemplate = childTemplate.replace('%%signed%%', self.template_signed)
-            childTemplate = childTemplate.replace('%%pubkey%%', child_row[8])
-            #childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
-            childTemplate = childTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(child_row[8]))
-          else:
-            childTemplate = childTemplate.replace('%%signed%%', '')
-        else:
-          childTemplate = childTemplate.replace('%%signed%%', '')
-        childTemplate = childTemplate.replace('%%articlehash%%', sha1(child_row[0]).hexdigest()[:10])
-        childTemplate = childTemplate.replace('%%articlehash_full%%', sha1(child_row[0]).hexdigest())
-        childTemplate = childTemplate.replace('%%author%%', child_row[1])
-        childTemplate = childTemplate.replace('%%subject%%', child_row[2])
-        childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
-        
-        if len(child_row[4].split('\n')) > 20:
-          message = '\n'.join(child_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], sha1(child_row[0]).hexdigest()[:10])
-        elif len(child_row[4]) > 1000:
-          message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], sha1(child_row[0]).hexdigest()[:10])
-        else:
-          message = child_row[4]
-        message = self.linker.sub(self.linkit, message) 
-        message = self.quoter.sub(self.quoteit, message)
-        message = self.coder.sub(self.codeit, message)
-        childTemplate = childTemplate.replace('%%message%%', message)
-        childs.append(childTemplate)
+        t_engine_mapper_root['signed'] = ''
       if len(root_row[4].split('\n')) > 20:
         message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
       elif len(root_row[4]) > 1000:
@@ -1039,60 +1028,115 @@ class main(threading.Thread):
       message = self.linker.sub(self.linkit, message)
       message = self.quoter.sub(self.quoteit, message)
       message = self.coder.sub(self.codeit, message)
+      
+      child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], group_id)).fetchone()[0])
+      if child_count > 4: missing = child_count - 4
+      else: missing = 0
       if missing > 0:
-        if missing == 1:
-          post = "post"
+        if missing == 1: post = "post"
+        else: post = "posts"
+        message += '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
+
+      t_engine_mapper_root['message'] = message
+      t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
+      t_engine_mapper_root['articlehash_full'] = root_message_id_hash
+      t_engine_mapper_root['author'] = root_row[1]
+      t_engine_mapper_root['subject'] = root_row[2]
+      t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M')
+      t_engine_mapper_root['imagelink'] = root_imagelink
+      t_engine_mapper_root['thumblink'] = root_thumblink
+      t_engine_mapper_root['imagename'] =  root_row[5]
+
+      childs = list()
+      childs.append('') # FIXME: the fuck is this for?
+
+      for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
+        t_engine_mapper_child = dict()
+        article_hash = sha1(child_row[0]).hexdigest()
+        if child_row[6] != '':
+          if child_row[7] == 'invalid':
+            child_thumblink = self.invalid_file
+          elif child_row[7] == 'document':
+            child_thumblink = self.document_file
+          else:
+            child_thumblink = child_row[7]
+          t_engine_mapper_child['imagelink'] = child_row[6]
+          t_engine_mapper_child['thumblink'] = child_thumblink
+          t_engine_mapper_child['imagename'] = child_row[5]
+        if child_row[8]:
+          if child_row[8] != '':
+            t_engine_mapper_child['signed'] = self.t_engine_signed.substitute(
+              articlehash=article_hash[:10],
+              pubkey=child_row[8],
+              pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
+            )
+          else:
+            t_engine_mapper_child['signed'] = ''
         else:
-          post = "posts"
-        rootTemplate = rootTemplate.replace('%%message%%', message + '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post))
-      else:
-        rootTemplate = rootTemplate.replace('%%message%%', message)
-      threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
-      threadsTemplate = threadsTemplate.replace('%%message_childs%%', ''.join(childs))
-      threads.append(threadsTemplate)
+          t_engine_mapper_child['signed'] = ''
+        
+        if len(child_row[4].split('\n')) > 20:
+          message = '\n'.join(child_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
+        elif len(child_row[4]) > 1000:
+          message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
+        else:
+          message = child_row[4]
+        message = self.linker.sub(self.linkit, message) 
+        message = self.quoter.sub(self.quoteit, message)
+        message = self.coder.sub(self.codeit, message)
+        t_engine_mapper_child['articlehash'] = article_hash[:10]
+        t_engine_mapper_child['articlehash_full'] = article_hash
+        t_engine_mapper_child['author'] = child_row[1]
+        t_engine_mapper_child['subject'] = child_row[2]
+        t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M')
+        t_engine_mapper_child['message'] = message
+        if child_row[6] != '':
+          childs.append(self.t_engine_message_pic.substitute(t_engine_mapper_child))
+        else:
+          childs.append(self.t_engine_message_nopic.substitute(t_engine_mapper_child))
+      
+      threads.append(
+        self.t_engine_board_threads.substitute(
+          message_root=self.t_engine_message_root.substitute(t_engine_mapper_root),
+          message_childs=''.join(childs)
+        )
+      )
       del childs
     if thread_counter > 0 or (page_counter == 1 and thread_counter == 0):
       self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name_unquoted, page_counter), 2)
-      board_template = self.template_board.replace('%%help%%', self.template_help)
-      # FIXME: put threads on the end
-      board_template = board_template.replace('%%title%%', self.html_title)
-      board_template = board_template.replace('%%threads%%', ''.join(threads))
+      t_engine_mapper_board = dict()
+      t_engine_mapper_board['threads'] = ''.join(threads)
       pagelist = list()
       for page in xrange(1, pages + 1):
         if page != page_counter:
           pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
         else:
           pagelist.append('[{0}]&nbsp;'.format(page))
-      board_template = board_template.replace('%%pagelist%%', ''.join(pagelist))
-      boardlist = list()
-      for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
-        current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
-        current_group_name_encoded = self.basicHTMLencode(current_group_name)
-        if group_row[1] != group_id:
-          boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
-        else:
-          boardlist.append('&nbsp;' + current_group_name_encoded + '&nbsp;|')
-      boardlist[-1] = boardlist[-1][:-1]
-      board_template = board_template.replace('%%boardlist%%', ''.join(boardlist))
-      board_template = board_template.replace('%%full_board%%', full_board_name_unquoted)
-      board_template = board_template.replace('%%board%%', board_name)
-      board_template = board_template.replace('%%target%%', "{0}-1.html".format(board_name_unquoted))
+      t_engine_mapper_board['pagelist'] = ''.join(pagelist)
+      t_engine_mapper_board['boardlist'] = boardlist
+      t_engine_mapper_board['full_board'] = full_board_name_unquoted
+      t_engine_mapper_board['board'] = board_name
+      t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
       f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
-      f.write(board_template)
+      f.write(self.t_engine_board.substitute(t_engine_mapper_board))
       f.close()
       del pagelist
       del boardlist
       del threads
 
   def generate_thread(self, root_uid):
-    root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, group_id, public_key FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()
+    t_engine_mappings_root = dict()
+    root_message_id_hash = sha1(root_uid).hexdigest() #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
+    # FIXME: benchmark sha1() vs hasher_db_query
+            
+    root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, group_id, public_key FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()    
     if not root_row:
       # FIXME: create temporary root post here? this will never get called on startup because it checks for root posts only
       # FIXME: ^ alternatives: wasted threads in admin panel? red border around images in pic log? actually adding temporary root post while processing?
       #root_row = (root_uid, 'none', 'root post not yet available', 0, 'root post not yet available', '', '', 0, '')
       self.log('error: root post not yet available: {0}, creating temporary root post'.format(root_uid), 1)
       return
-    root_message_id_hash = sha1(root_uid).hexdigest() #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
+
     if self.sqlite.execute('SELECT group_id FROM groups WHERE group_id = ? AND blocked = 1', (root_row[8],)).fetchone():
       path = os.path.join(self.output_directory, 'thread-%s.html' % root_message_id_hash[:10])
       if os.path.isfile(path):
@@ -1102,11 +1146,7 @@ class main(threading.Thread):
         except Exception as e:
           self.log('ERROR: could not delete %s: %s' % (path, e), 0)
       return
-    #if hash_result:
-    #  root_message_id_hash = hash_result[0]
-    #else:
-    #  self.log('message hash for {0} not found. wtf?'.format(root_row[0]), 0)
-    #  return
+
     self.log("generating {0}/thread-{1}.html".format(self.output_directory, root_message_id_hash[:10]), 2)
     if root_row[6] != '':
       root_imagelink = root_row[6]
@@ -1119,38 +1159,36 @@ class main(threading.Thread):
     else:
       root_imagelink = self.no_file
       root_thumblink = self.no_file
-    rootTemplate = self.template_message_root
+
     if root_row[9]:
       if root_row[9] != '':
-        rootTemplate = rootTemplate.replace('%%signed%%', self.template_signed)
-        rootTemplate = rootTemplate.replace('%%pubkey%%', root_row[9])
-        #rootTemplate = rootTemplate.replace('%%pubkey_short%%', root_row[9][:3] + root_row[9][-3:])
-        rootTemplate = rootTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(root_row[9]))
+        t_engine_mappings_root['signed'] = self.t_engine_signed.substitute(
+          articlehash=root_message_id_hash[:10],
+          pubkey=root_row[9],
+          pubkey_short=self.generate_pubkey_short_utf_8(root_row[9])
+        )
       else:
-        rootTemplate = rootTemplate.replace('%%signed%%', '')
+        t_engine_mappings_root['signed'] = ''
     else:
-      rootTemplate = rootTemplate.replace('%%signed%%', '')
-    rootTemplate = rootTemplate.replace('%%articlehash%%', root_message_id_hash[:10])
-    rootTemplate = rootTemplate.replace('%%articlehash_full%%', root_message_id_hash)
-    rootTemplate = rootTemplate.replace('%%author%%', root_row[1])
-    rootTemplate = rootTemplate.replace('%%subject%%', root_row[2])
-    rootTemplate = rootTemplate.replace('%%sent%%', datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M'))
-    rootTemplate = rootTemplate.replace('%%imagelink%%', root_imagelink)
-    rootTemplate = rootTemplate.replace('%%thumblink%%', root_thumblink)
-    rootTemplate = rootTemplate.replace('%%imagename%%', root_row[5])
+      t_engine_mappings_root['signed'] = ''
     message = self.linker.sub(self.linkit, root_row[4])
     message = self.quoter.sub(self.quoteit, message)
     message = self.coder.sub(self.codeit, message)
-    rootTemplate = rootTemplate.replace('%%message%%', message)
+    t_engine_mappings_root['articlehash'] = root_message_id_hash[:10]
+    t_engine_mappings_root['articlehash_full'] = root_message_id_hash
+    t_engine_mappings_root['author'] = root_row[1]
+    t_engine_mappings_root['subject'] = root_row[2]
+    t_engine_mappings_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M')
+    t_engine_mappings_root['imagelink'] = root_imagelink
+    t_engine_mappings_root['thumblink'] = root_thumblink
+    t_engine_mappings_root['imagename'] = root_row[5]
+    t_engine_mappings_root['message'] = message
     childs = list()
-    childs.append('')
+    childs.append('') # FIXME: the fuck is this for?
+    
     for child_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid ORDER BY sent ASC', (root_uid,)).fetchall():
-      #message_id_hash = sha1(child_row[0]).hexdigest()[:10]#self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (child_row[0],)).fetchone()
-      #if hash_result:
-      #  message_id_hash = hash_result[0]
-      #else:
-      #  self.log('message hash for {0} not found. wtf?'.format(child_row[0]), 0)
-      #  continue
+      t_engine_mappings_child = dict()
+      article_hash = sha1(child_row[0]).hexdigest()
       if child_row[6] != '':
         if child_row[7] == 'invalid':
           child_thumblink = self.invalid_file
@@ -1158,35 +1196,38 @@ class main(threading.Thread):
           child_thumblink = self.document_file
         else:
           child_thumblink = child_row[7]
-        childTemplate = self.template_message_child_pic.replace('%%imagelink%%', child_row[6])
-        childTemplate = childTemplate.replace('%%thumblink%%', child_thumblink)
-        childTemplate = childTemplate.replace('%%imagename%%', child_row[5])
-      else:
-        childTemplate = self.template_message_child_nopic
+        t_engine_mappings_child['imagelink'] = child_row[6]
+        t_engine_mappings_child['thumblink'] = child_thumblink
+        t_engine_mappings_child['imagename'] = child_row[5]
       if child_row[8]:
         if child_row[8] != '':
-          childTemplate = childTemplate.replace('%%signed%%', self.template_signed)
-          childTemplate = childTemplate.replace('%%pubkey%%', child_row[8])
-          #childTemplate = childTemplate.replace('%%pubkey_short%%', child_row[8][:3] + child_row[8][-3:])
-          childTemplate = childTemplate.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(child_row[8]))
+          t_engine_mappings_child['signed'] = self.t_engine_signed.substitute(
+            articlehash=article_hash[:10],
+            pubkey=child_row[8],
+            pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
+          )
         else:
-          childTemplate = childTemplate.replace('%%signed%%', '')
+          t_engine_mappings_child['signed'] = ''
       else:
-        childTemplate = childTemplate.replace('%%signed%%', '')
-      childTemplate = childTemplate.replace('%%articlehash%%', sha1(child_row[0]).hexdigest()[:10])
-      childTemplate = childTemplate.replace('%%articlehash_full%%', sha1(child_row[0]).hexdigest())
-      childTemplate = childTemplate.replace('%%author%%', child_row[1])
-      childTemplate = childTemplate.replace('%%subject%%', child_row[2])
-      childTemplate = childTemplate.replace('%%sent%%', datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M'))
+        t_engine_mappings_child['signed'] = ''
+      t_engine_mappings_child['articlehash'] = article_hash[:10]
+      t_engine_mappings_child['articlehash_full'] = article_hash
+      t_engine_mappings_child['author'] = child_row[1]
+      t_engine_mappings_child['subject'] = child_row[2]
+      t_engine_mappings_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M')
       message = self.linker.sub(self.linkit, child_row[4])
       message = self.quoter.sub(self.quoteit, message)
-      message = self.coder.sub(self.codeit, message)
-      childTemplate = childTemplate.replace('%%message%%', message)
-      childs.append(childTemplate)
-
-    threadsTemplate = self.template_board_threads.replace('%%message_root%%', rootTemplate)
-    threadsTemplate = threadsTemplate.replace('%%message_childs%%', ''.join(childs))
+      message = self.coder.sub(self.codeit, message)      
+      t_engine_mappings_child['message'] = message
+      if child_row[6] != '':
+        childs.append(self.t_engine_message_pic.substitute(t_engine_mappings_child))
+      else:
+        childs.append(self.t_engine_message_nopic.substitute(t_engine_mappings_child))
+    t_engine_mappings_threads = dict()
+    t_engine_mappings_threads['message_root'] = self.t_engine_message_root.substitute(t_engine_mappings_root)
+    t_engine_mappings_threads['message_childs'] = ''.join(childs)
     boardlist = list()
+    # FIXME hold this list somewhere global and update on board add/remove/block/unblock
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
       current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
       current_group_name_encoded = self.basicHTMLencode(current_group_name)
@@ -1195,53 +1236,53 @@ class main(threading.Thread):
         full_group_name_unquoted = group_row[0].replace('"', '').replace('/', '')
         full_group_name = self.basicHTMLencode(full_group_name_unquoted)
     boardlist[-1] = boardlist[-1][:-1]
-    threadSingle = self.template_thread_single.replace('%%help%%', self.template_help)
-    threadSingle = threadSingle.replace('%%title%%', self.html_title)
-    threadSingle = threadSingle.replace('%%boardlist%%', ''.join(boardlist))
-    threadSingle = threadSingle.replace('%%thread_id%%', root_message_id_hash)
-    threadSingle = threadSingle.replace('%%board%%', full_group_name.split('.', 1)[1])
-    threadSingle = threadSingle.replace('%%full_board%%', full_group_name_unquoted)
-    threadSingle = threadSingle.replace('%%target%%', "{0}-1.html".format(full_group_name.split('.', 1)[1]))
-    threadSingle = threadSingle.replace('%%subject%%', root_row[2][:60])
-    threadSingle = threadSingle.replace('%%thread_single%%', threadsTemplate)
+    t_engine_mappings_thread_single = dict()
+    t_engine_mappings_thread_single['boardlist'] = ''.join(boardlist)
+    t_engine_mappings_thread_single['thread_id'] = root_message_id_hash
+    t_engine_mappings_thread_single['board'] = full_group_name.split('.', 1)[1]
+    t_engine_mappings_thread_single['full_board'] = full_group_name_unquoted
+    t_engine_mappings_thread_single['target'] = "{0}-1.html".format(full_group_name.split('.', 1)[1])
+    t_engine_mappings_thread_single['subject'] = root_row[2][:60]
+    t_engine_mappings_thread_single['thread_single'] = self.t_engine_board_threads.substitute(t_engine_mappings_threads)
+
     f = codecs.open(os.path.join(self.output_directory, 'thread-{0}.html'.format(root_message_id_hash[:10])), 'w', 'UTF-8')
-    f.write(threadSingle)
+    f.write(self.t_engine_thread_single.substitute(t_engine_mappings_thread_single))
     f.close()
-    del childs
-    del boardlist
+    #del childs
+    #del boardlist
     
   def generate_overview(self):
     self.log("generating {0}/overview.html".format(self.output_directory), 2)
-    overview = self.template_overview
-    overview = overview.replace('%%title%%', self.html_title)
+    t_engine_mappings_overview = dict()
     boardlist = list()
+    news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'
+    # FIXME: cache this shit somewhere
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
       current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
       current_group_name_encoded = self.basicHTMLencode(current_group_name)
       boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
     boardlist[-1] = boardlist[-1][:-1]
-    overview = overview.replace('%%boardlist%%', ''.join(boardlist))
-    news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'
-    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent FROM articles WHERE article_uid = ?', (news_uid, )).fetchone()
-    
-    overview = overview.replace('%%subject%%', row[0])
-    overview = overview.replace('%%sent%%', datetime.utcfromtimestamp(row[2]).strftime('%Y/%m/%d %H:%M'))
-    overview = overview.replace('%%pubkey_short%%', self.generate_pubkey_short_utf_8(row[3]))
-    overview = overview.replace('%%pubkey%%', row[3])
+    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (news_uid, )).fetchone()
     postid = sha1(news_uid).hexdigest()[:10]
     if row[4] == '' or row[4] == news_uid:
       parent = postid
     else:
       parent = sha1(row[4]).hexdigest()[:10]
-    overview = overview.replace('%%postid%%', postid)
-    overview = overview.replace('%%parent%%', parent)
     if len(row[1].split('\n')) > 5:
       message = '\n'.join(row[1].split('\n')[:5]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
     elif len(row[1]) > 1000:
       message = row[1][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
     else:
       message = row[1]
-    overview = overview.replace('%%message%%', message)
+    t_engine_mappings_overview['boardlist'] = ''.join(boardlist)
+    t_engine_mappings_overview['subject'] = row[0]
+    t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%Y/%m/%d %H:%M')
+    t_engine_mappings_overview['author'] = row[5]
+    t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
+    t_engine_mappings_overview['pubkey'] = row[3]
+    t_engine_mappings_overview['postid'] = postid
+    t_engine_mappings_overview['parent'] = parent
+    t_engine_mappings_overview['message'] = message
     
     weekdays = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
     max = 0
@@ -1263,7 +1304,7 @@ class main(threading.Thread):
       stats[index] = self.template_stats_usage_row.replace('%%postcount%%', str(stats[index][0])).replace('%%date%%', stats[index][1]).replace('%%weekday%%', stats[index][2]).replace('%%bar%%', graph)
     overview_stats_usage = self.template_stats_usage
     overview_stats_usage = overview_stats_usage.replace('%%stats_usage_rows%%', ''.join(stats))
-    overview = overview.replace('%%stats_usage%%', overview_stats_usage)
+    t_engine_mappings_overview['stats_usage'] = overview_stats_usage
     del stats[:]
 
     postcount = 23
@@ -1302,17 +1343,17 @@ class main(threading.Thread):
     #  stats.append(self.template_latest_posts_row.replace('%%sent%%', last_update).replace('%%board%%', board).replace('%%parent%%', parent).replace('%%articlehash%%', articlehash).replace('%%author%%', author).replace('%%subject%%', subject))
     overview_latest_posts = self.template_latest_posts
     overview_latest_posts = overview_latest_posts.replace('%%latest_posts_rows%%', ''.join(stats))
-    overview = overview.replace('%%latest_posts%%', overview_latest_posts)
+    t_engine_mappings_overview['latest_posts'] = overview_latest_posts
     del stats[:]
 
     for row in self.sqlite.execute('SELECT count(1) as counter, group_name FROM articles, groups WHERE groups.blocked = 0 AND articles.group_id = groups.group_id GROUP BY articles.group_id ORDER BY counter DESC').fetchall():
       stats.append(self.template_stats_boards_row.replace('%%postcount%%', str(row[0])).replace('%%board%%', self.basicHTMLencode(row[1])))
     overview_stats_boards = self.template_stats_boards
     overview_stats_boards = overview_stats_boards.replace('%%stats_boards_rows%%', ''.join(stats))
-    overview = overview.replace('%%stats_boards%%', overview_stats_boards)
+    t_engine_mappings_overview['stats_boards'] = overview_stats_boards
     
     f = codecs.open(os.path.join(self.output_directory, 'overview.html'), 'w', 'UTF-8')
-    f.write(overview)
+    f.write(self.t_engine_overview.substitute(t_engine_mappings_overview))
     f.close()
 
 if __name__ == '__main__':
