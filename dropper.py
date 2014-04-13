@@ -22,6 +22,7 @@ class dropper(threading.Thread):
     self.sqlite_hasher = self.sqlite_hasher_conn.cursor()
     self.sqlite_hasher.execute('''CREATE TABLE IF NOT EXISTS article_hashes
                (message_id text PRIMARY KEY, message_id_hash text)''')
+    self.sqlite_hasher.execute('CREATE INDEX IF NOT EXISTS article_hash_idx ON article_hashes(message_id_hash);')
     self.sqlite_hasher_conn.commit()
     self.reqs = ['message-id', 'newsgroups', 'date', 'subject', 'from', 'path']
     threading.Thread.__init__(self)
@@ -46,7 +47,7 @@ class dropper(threading.Thread):
       self.sqlite.execute('''CREATE TABLE IF NOT EXISTS articles
                  (message_id text, group_id INTEGER, article_id INTEGER, received INTEGER, PRIMARY KEY (article_id, group_id))''')
 
-      self.sqlite.execute('CREATE INDEX article_idx ON articles(message_id);')
+      self.sqlite.execute('CREATE INDEX IF NOT EXISTS article_idx ON articles(message_id);')
       self.sqlite_conn.commit()
       current_version = 1
     
