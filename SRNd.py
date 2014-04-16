@@ -607,9 +607,7 @@ class SRNd(threading.Thread):
       print "[SRNd] should remove {0} but not in dict. wtf?".format(name)
 
   def relay_dropper_handler(self, signum, frame):
-    #print "[relay_handler]"
-    #print "signum: ", signum
-    #print "frame: ", frame
+    #TODO: remove, this is not needed anymore at all?
     self.dropper.handler_progress_incoming(signum, frame)
 
   def watching(self):

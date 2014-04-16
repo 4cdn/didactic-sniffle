@@ -36,7 +36,10 @@ else:
 
 signal.signal(signal.SIGHUP, srnd.update_hooks_outfeeds_plugins)
 srnd.start()
-# TODO initialize with calling srnd.dropper.hanler_progress_incoming(None, None), best suited in SRNd run() itself.
+while not srnd.dropper.running:
+  time.sleep(0.5)
+print "[SRNd] starting initial check for new articles"
+srnd.dropper.handler_progress_incoming(None, None)
 while True:
   try:
     if bsd:

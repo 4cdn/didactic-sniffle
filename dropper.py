@@ -35,6 +35,7 @@ class dropper(threading.Thread):
     except Exception as e:
       if self.debug > 3: print "[dropper] error while fetching db_version: %s" % e
       self.update_db(0)
+    self.running = False
 
   def update_db(self, current_version):
     if self.debug > 4: "[dropper] should update db from version %i" % current_version
@@ -266,10 +267,9 @@ class dropper(threading.Thread):
 
   def run(self):
     # only called from the outside via handler_progress_incoming()
-    self.running = True
     self.busy = False
     self.retry = False
-    self.handler_progress_incoming(None, None)
+    self.running = True
     while self.running:
       time.sleep(5)
       #signal.pause()
