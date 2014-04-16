@@ -9,6 +9,7 @@ import sqlite3
 import random
 import string
 import Queue
+import traceback
 
 # send article:
 # f = open(os.path.join('invalid', item), 'r')
@@ -48,24 +49,7 @@ class feed(threading.Thread):
       self.outstream_currently_testing = ''
       self.polltimeout = 500 # 1 * 1000
       self.name = 'outfeed-{0}-{1}'.format(self.host, self.port)
-      if ':' in self.host:
-        if self.proxy != None:
-          raise Exception("can't use proxy server for ipv6 connections")
-        self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-      else:
-        if self.proxy == None:
-          self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        elif self.proxy[0] == 'socks5':
-          self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-          self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS5, self.proxy[1], self.proxy[2], rdns=True)
-        elif self.proxy[0] == 'socks4':
-          self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-          self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS4, self.proxy[1], self.proxy[2], rdns=True)
-        elif self.proxy[0] == 'http':
-          self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-          self.socket.setproxy(sockssocket.PROXY_TYPE_HTTP, self.proxy[1], self.proxy[2], rdns=True)
-        else:
-          raise Exception("unknown proxy type %s, must be one of socks5, socks4, http." % self.proxy[0])
+      self.init_socket()
     else:
       self.socket = connection[0]
       self.fileno = self.socket.fileno()
@@ -88,10 +72,34 @@ class feed(threading.Thread):
     self.current_article_id = -1
     self.sync_on_startup = sync_on_startup
 
+  def init_socket(self):
+    if ':' in self.host:
+      if self.proxy != None:
+        raise Exception("can't use proxy server for ipv6 connections")
+      self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+      return
+    if self.proxy == None:
+      self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    elif self.proxy[0] == 'socks5':
+      self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+      self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS5, self.proxy[1], self.proxy[2], rdns=True)
+    elif self.proxy[0] == 'socks4':
+      self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+      self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS4, self.proxy[1], self.proxy[2], rdns=True)
+    elif self.proxy[0] == 'http':
+      self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+      self.socket.setproxy(sockssocket.PROXY_TYPE_HTTP, self.proxy[1], self.proxy[2], rdns=True)
+    else:
+      raise Exception("unknown proxy type %s, must be one of socks5, socks4, http." % self.proxy[0])
+
   def add_article(self, message_id):
     self.queue.put(message_id)
 
   def send(self, message):
+    #FIXME: readd message_id if conn_broken
+    #FIXME: ^ add message_id as additional argument
+    #TODO: do the actual reading and sending here as well, including converting
+    #TODO: ^ provide file FD as argument so reply to remote can be checked first 
     self.state = 'sending'
     sent = 0
     length = len(message)
@@ -112,7 +120,7 @@ class feed(threading.Thread):
           break
         else:
           print "ERROR: [%s] got an unknown socket error at line 102 with error number %i: %s" % (self.name, e.errno, e)
-          self.con_broken = True  
+          self.con_broken = True
           break
     if not self.multiline_out and self.debug > 2: print "[{0}] out: {1}".format(self.name, message[:-2])
     if self.multiline_out and self.debug > 3: print "[{0}] out: {1}".format(self.name, message[:-2])
@@ -167,7 +175,12 @@ class feed(threading.Thread):
             # FIXME debug this
             print "[%s] %s, setting connected = True" % (self.name, e)
             connected = True
-          if self.debug > 1: print "[%s] connect socket.error: %s" % (self.name, e)
+          elif e.errno == 9:
+            # Bad file descriptor
+            self.init_socket()
+          elif self.debug > 1:
+            print "[%s] connect socket.error: %s" % (self.name, e)
+            print traceback.format_exc()
         except sockssocket.ProxyError as e:
           if self.debug > 1: print "[%s] connect ProxyError: %s" % (self.name, e)
     else:
@@ -193,24 +206,7 @@ class feed(threading.Thread):
             if self.debug > 4: print "[{0}] {1}".format(self.name, e)
             pass
           self.socket.close()
-          if ':' in self.host:
-            if self.proxy != None:
-              raise Exception("can't use proxy server for ipv6 connections")
-            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-          else:
-            if self.proxy == None:
-              self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            elif self.proxy[0] == 'socks5':
-              self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-              self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS5, self.proxy[1], self.proxy[2], rdns=True)
-            elif self.proxy[0] == 'socks4':
-              self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-              self.socket.setproxy(sockssocket.PROXY_TYPE_SOCKS4, self.proxy[1], self.proxy[2], rdns=True)
-            elif self.proxy[0] == 'http':
-              self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-              self.socket.setproxy(sockssocket.PROXY_TYPE_HTTP, self.proxy[1], self.proxy[2], rdns=True)
-            else:
-              raise Exception("unknown proxy type: %s. must be one of socks5, socks4, http." % self.proxy[0])
+          self.init_socket()
           while self.running and not connected:
             # FIXME creat def connect(), use self.vars for buffer, connected and poll
             if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
@@ -323,6 +319,7 @@ class feed(threading.Thread):
             count = 0
             while self.queue.qsize() > 0 and count <= 50 and not self.con_broken:
               # FIXME why self.message_id here? IHAVE and POST makes sense, but streaming?
+              # FIXME: add CHECK statements to list and send the whole bunch after the loop
               self.message_id = self.queue.get()
               if os.path.exists(os.path.join('articles', self.message_id)):
                 self.send('CHECK {0}\r\n'.format(self.message_id))
@@ -331,6 +328,7 @@ class feed(threading.Thread):
           elif self.queue.qsize() > 0 and not self.con_broken:
             self.message_id = self.queue.get()
             #print "[{0}] got message-id {1}".format(self.name, self.message_id)
+            # FIXME: check if article actually exists
             if self.outstream_ihave:
               self.send('IHAVE {0}\r\n'.format(self.message_id))
             elif self.outstream_post:
