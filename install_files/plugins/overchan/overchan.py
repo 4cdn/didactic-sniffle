@@ -1262,27 +1262,37 @@ class main(threading.Thread):
       current_group_name_encoded = self.basicHTMLencode(current_group_name)
       boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
     boardlist[-1] = boardlist[-1][:-1]
-    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (news_uid, )).fetchone()
-    postid = sha1(news_uid).hexdigest()[:10]
-    if row[4] == '' or row[4] == news_uid:
-      parent = postid
-    else:
-      parent = sha1(row[4]).hexdigest()[:10]
-    if len(row[1].split('\n')) > 5:
-      message = '\n'.join(row[1].split('\n')[:5]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
-    elif len(row[1]) > 1000:
-      message = row[1][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
-    else:
-      message = row[1]
     t_engine_mappings_overview['boardlist'] = ''.join(boardlist)
-    t_engine_mappings_overview['subject'] = row[0]
-    t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%Y/%m/%d %H:%M')
-    t_engine_mappings_overview['author'] = row[5]
-    t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
-    t_engine_mappings_overview['pubkey'] = row[3]
-    t_engine_mappings_overview['postid'] = postid
-    t_engine_mappings_overview['parent'] = parent
-    t_engine_mappings_overview['message'] = message
+    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (news_uid, )).fetchone()
+    if not row:
+      t_engine_mappings_overview['subject'] = ''
+      t_engine_mappings_overview['sent'] = ''
+      t_engine_mappings_overview['author'] = ''
+      t_engine_mappings_overview['pubkey_short'] = ''
+      t_engine_mappings_overview['pubkey'] = ''
+      t_engine_mappings_overview['postid'] = ''
+      t_engine_mappings_overview['parent'] = 'does_not_exist_yet'
+      t_engine_mappings_overview['message'] = 'once upon a time there was a news post'
+    else:
+      postid = sha1(news_uid).hexdigest()[:10]
+      if row[4] == '' or row[4] == news_uid:
+        parent = postid
+      else:
+        parent = sha1(row[4]).hexdigest()[:10]
+      if len(row[1].split('\n')) > 5:
+        message = '\n'.join(row[1].split('\n')[:5]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
+      elif len(row[1]) > 1000:
+        message = row[1][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
+      else:
+        message = row[1]
+      t_engine_mappings_overview['subject'] = row[0]
+      t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%Y/%m/%d %H:%M')
+      t_engine_mappings_overview['author'] = row[5]
+      t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
+      t_engine_mappings_overview['pubkey'] = row[3]
+      t_engine_mappings_overview['postid'] = postid
+      t_engine_mappings_overview['parent'] = parent
+      t_engine_mappings_overview['message'] = message
     
     weekdays = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
     max = 0
