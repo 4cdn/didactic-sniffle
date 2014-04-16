@@ -218,7 +218,14 @@ class dropper(threading.Thread):
           self.sqlite.execute('UPDATE groups SET highest_id = ?, article_count = article_count + 1, last_update = ? WHERE group_id = ?', (article_id, int(time.time()), group_id))
           self.sqlite_conn.commit()
       group_link = os.path.join(group_dir, str(article_id))
-      os.symlink(article_link, group_link)
+      try:
+        os.symlink(article_link, group_link)
+      except:
+        # FIXME: except os.error as e; e.errno == 17 (file already exists). errno portable?
+        target = os.path.basename(os.readlink(group_link))
+        if target != message_id:
+          print "ERROR: [dropper] found a strange group link which should point to '%s' but instead points to '%s'. Won't overwrite this link." % (message_id, target)
+
       # whitelist
       for group_item in self.SRNd.hooks:
         if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
