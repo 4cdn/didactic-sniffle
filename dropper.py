@@ -269,6 +269,7 @@ class dropper(threading.Thread):
     self.running = True
     self.busy = False
     self.retry = False
+    self.handler_progress_incoming(None, None)
     while self.running:
       time.sleep(5)
       #signal.pause()
