@@ -264,15 +264,14 @@ class main(threading.Thread):
     except ImportError as e:
       self.log(self.logger.WARNING, '%s: %s' % (subject, e))
       lexer = get_lexer_by_name('text', encoding='utf-8')
-    result = highlight(paste_content, lexer, self.formatter).decode('utf-8')
+    result = highlight(paste_content, lexer, self.formatter)
     template = self.template_single_paste.replace('%%paste_title%%', subject)
     template = template.replace('%%title%%', self.html_title)
     template = template.replace('%%sender%%', sender)
     template = template.replace('%%sent%%', datetime.utcfromtimestamp(sent).strftime('%Y/%m/%d %H:%M UTC'))
     template = template.replace('%%identifier%%', identifier)
     template = template.replace('%%paste%%', result)
-    f = codecs.open(os.path.join(self.outputDirectory, identifier + '.html'), 'w', encoding='utf-8')
-    #f = open(os.path.join(self.outputDirectory, identifier + '.html'), 'w')
+    f = open(os.path.join(self.outputDirectory, identifier + '.html'), 'w')
     f.write(template)
     f.close()
     del result, template
