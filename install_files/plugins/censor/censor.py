@@ -14,32 +14,39 @@ from hashlib import sha512
 import Queue
 import censor_httpd
 import sys
+import traceback
 
 class main(threading.Thread):
 
-  def __init__(self, thread_name, args):
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log(self.name, message, loglevel)
+
+  def __init__(self, thread_name, logger, args):
     threading.Thread.__init__(self)
     self.name = thread_name
+    self.logger = logger
     # TODO: move sleep stuff to config table
     self.sleep_threshold = 10
     self.sleep_time = 0.05
     if 'debug' not in args:
-      self.debug = 2
-      self.log('debuglevel not defined, using default of debug = 2', 2)
+      self.loglevel = self.logger.INFO
+      self.log(self.logger.INFO, 'debuglevel not defined, using default of debug = %i' % self.logger.INFO)
     else:
       try:
-        self.debug = int(args['debug'])
-        if self.debug < 0 or self.debug > 5:
-          self.debug = 2
-          self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+        self.loglevel = int(args['debug'])
+        if self.loglevel < 0 or self.loglevel > 5:
+          self.loglevel = self.logger.INFO
+          self.log(self.logger.INFO, 'debuglevel not between 0 and 5, using default of debug = %i' % self.logger.INFO)
         else:
-          self.log('using debuglevel {0}'.format(self.debug), 3)
+          self.log(self.logger.DEBUG, 'using debuglevel %i' % self.loglevel)
       except ValueError as e:
-        self.debug = 2
-        self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
-    self.log('initializing as plugin..', 2)
+        self.loglevel = self.logger.INFO
+        self.log(self.logger.INFO, 'debuglevel not between 0 and 5, using default of debug = %i' % self.logger.INFO)
+    self.log(self.logger.INFO, 'initializing as plugin..')
     if not 'SRNd' in args:
-      self.log('SRNd not in args', 0)
+      # FIXME add self.die()
+      self.log(self.logger.CRITICAL, 'SRNd not in args')
       return
     if 'add_admin' in args:
       self.add_admin = args['add_admin']
@@ -50,9 +57,9 @@ class main(threading.Thread):
       if args['sync_on_startup'].lower() == 'true':
         self.sync_on_startup = True
     self.SRNd = args['SRNd']
-    self.log('initializing censor_httpd..', 3)
+    self.log(self.logger.DEBUG, 'initializing censor_httpd..')
     args['censor'] = self
-    self.httpd = censor_httpd.censor_httpd("censor_httpd", args)
+    self.httpd = censor_httpd.censor_httpd("censor_httpd", self.logger, args)
     self.db_version = 3
     self.all_flags = "511"
     self.queue = Queue.Queue()
@@ -74,9 +81,9 @@ class main(threading.Thread):
     #self.log('this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])), 0)
 
   def update_db(self, current_version):
-    self.log("should update db from version %i" % current_version, 4)
+    self.log(self.logger.INFO, "should update db from version %i" % current_version)
     if current_version == 0:
-      self.log("updating db from version %i to version %i" % (current_version, 1), 1)  
+      self.log(self.logger.INFO, "updating db from version %i to version %i" % (current_version, 1))  
       # create configuration
       self.censordb.execute("CREATE TABLE config (key text PRIMARY KEY, value text)")
       self.censordb.execute('INSERT INTO config VALUES ("db_version","1")')
@@ -119,13 +126,13 @@ class main(threading.Thread):
       #self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
       #self.censordb.execute("CREATE TABLE IF NOT EXISTS config (key text PRIMARY KEY, value text)")
     if current_version == 1:
-      self.log("updating db from version %i to version %i" % (current_version, 2), 1)
+      self.log(self.logger.INFO, "updating db from version %i to version %i" % (current_version, 2))
       self.censordb.execute("CREATE TABLE signature_cache (message_uid text PRIMARY KEY, valid INTEGER)")
       self.censordb.execute('UPDATE config SET value = "2" WHERE key = "db_version"')
       self.sqlite_censor_conn.commit()
       current_version = 2
     if current_version == 2:
-      self.log("updating db from version %i to version %i" % (current_version, 3), 1)
+      self.log(self.logger.INFO, "updating db from version %i to version %i" % (current_version, 3))
       self.censordb.execute("CREATE UNIQUE INDEX IF NOT EXISTS sig_cache_message_uid_idx ON signature_cache(message_uid);")
       self.censordb.execute('UPDATE config SET value = "3" WHERE key = "db_version"')
       self.sqlite_censor_conn.commit()
@@ -133,6 +140,7 @@ class main(threading.Thread):
   def run(self):
     #if self.should_terminate:
     #  return
+    self.log(self.logger.INFO, 'starting up as plugin..')
     self.sqlite_dropper_conn = sqlite3.connect('dropper.db3')
     self.dropperdb = self.sqlite_dropper_conn.cursor()
     self.sqlite_censor_conn = sqlite3.connect('censor.db3')
@@ -146,7 +154,7 @@ class main(threading.Thread):
       if db_version < self.db_version:
         self.update_db(db_version)
     except Exception as e:
-      self.log("error while fetching db_version: %s" % e, 3)
+      self.log(self.logger.DEBUG, "error while fetching db_version: %s. assuming new database" % e)
       self.update_db(0)
     if self.add_admin != "":
       try:
@@ -167,14 +175,14 @@ class main(threading.Thread):
           for line in data.split("\n"):
             self.handle_line(line, key_id, timestamp)
         else:
-          self.log('unknown source: %s' % source, 3)
+          self.log(self.logger.WARNING, 'unknown source: %s' % source)
         if self.queue.qsize() > self.sleep_threshold:
           time.sleep(self.sleep_time)
       except Queue.Empty as e:
         pass
     self.sqlite_censor_conn.close()
     self.sqlite_dropper_conn.close()
-    self.log('bye', 2)
+    self.log(self.logger.INFO, 'bye')
     
   def allowed(self, key_id, command="all", board=None):
     if key_id in self.allowed_cache:
@@ -196,11 +204,12 @@ class main(threading.Thread):
         self.allowed_cache[key_id][command] = (flags_available & flag_required) == flag_required
       return (flags_available & flag_required) == flag_required
     except Exception as e:
-      print e
+      self.log(self.logger.ERROR, 'unknown exception in allowed(): %s' % e)
+      self.log(self.logger.ERROR, traceback.format_exc())
       return False
     
   def process_article(self, message_id):
-    self.log("processing %s.." % message_id, 4)
+    self.log(self.logger.DEBUG, "processing %s.." % message_id)
     try:
       valid = int(self.censordb.execute("SELECT valid FROM signature_cache WHERE message_uid = ?", (message_id,)).fetchone()[0])
       if not valid:
@@ -209,13 +218,12 @@ class main(threading.Thread):
       try:
         self.parse_article(f, message_id)
       except Exception as e:
-        self.log('something went wrong while parsing %s: %s' %(message_id, e), 1)
+        self.log(self.logger.WARNING, 'something went wrong while parsing %s: %s' % (message_id, e))
         f.close()
       return True
     except Exception as e:
       pass
     public_key = None
-    self.log("processing %s.." % message_id, 3)
     f = open(os.path.join("articles", message_id), 'r')
     line = f.readline()
     while len(line) != 0:
@@ -236,16 +244,16 @@ class main(threading.Thread):
     hasher.update(oldline.replace("\r\n", ""))
     try:
       nacl.signing.VerifyKey(unhexlify(public_key)).verify(hasher.digest(), unhexlify(signature))
-      self.log("found valid signature: %s" % message_id, 3)
-      self.log("seeking from %i back to %i" % (f.tell(), bodyoffset), 4)
+      self.log(self.logger.DEBUG, "found valid signature: %s" % message_id)
+      self.log(self.logger.VERBOSE, "seeking from %i back to %i" % (f.tell(), bodyoffset))
       f.seek(bodyoffset)
       self.censordb.execute('INSERT INTO signature_cache (message_uid, valid) VALUES (?, ?)', (message_id, 1))
       self.sqlite_censor_conn.commit()
     except Exception as e:
-      if self.debug > 3:
-        self.log("could not verify signature: %s: %s" % (message_id, e), 4)
+      if self.loglevel < self.logger.INFO:
+        self.log(self.logger.DEBUG, "could not verify signature: %s: %s" % (message_id, e))
       else:
-        self.log("could not verify signature: %s" % message_id, 3)
+        self.log(self.logger.INFO, "could not verify signature: %s" % message_id)
       f.close()
       self.censordb.execute('INSERT INTO signature_cache (message_uid, valid) VALUES (?, ?)', (message_id, 0))
       self.sqlite_censor_conn.commit()
@@ -278,7 +286,7 @@ class main(threading.Thread):
     #time_mapper = float(0)
     #time_mapper_sql = float(0)
     #time_total = time.time()
-    self.log("parsing %s.." % message_id, 4)
+    self.log(self.logger.DEBUG, "parsing %s.." % message_id)
     if key_id == None:
       for line in article_fd:
         if len(line) == 1:
@@ -302,7 +310,7 @@ class main(threading.Thread):
         else:
           sent = int(time.time())
     if not sent:
-      self.log("WARNING, received article does not contain a date: header. using current timestamp instead", 0)
+      self.log(self.logger.INFO, "received article does not contain a date: header. using current timestamp instead")
       sent = int(time.time())
     
     #self.handle_line(line[:-1], key_id, sent)
@@ -315,7 +323,7 @@ class main(threading.Thread):
       line = line.split('\n')[0]
       command = line.lower().split(" ", 1)[0]
       if not command in self.command_mapper:
-        self.log("got unknown command: %s" % line, 3)
+        self.log(self.logger.DEBUG, 'got unknown command: %s' % line)
         continue
       #counter += 1
       if '#' in line:
@@ -346,7 +354,7 @@ class main(threading.Thread):
         data = line.lower().split(" ", 1)[1]
         accepted = 0
         reason_id = 1
-        self.log("not authorized for '%s': %i" % (command, key_id), 4)
+        self.log(self.logger.DEBUG, "not authorized for '%s': %i" % (command, key_id))
       #timestamp_start = time.time()  
       if command in self.command_cache:
         #time_command_cache += time.time() - timestamp_start
@@ -397,11 +405,11 @@ class main(threading.Thread):
         if name in self.SRNd.plugins:
           self.SRNd.plugins[name].add_article(hooks[hook][0], source="control", timestamp=hooks[hook][1])
         else:
-          self.log("unknown plugin detected. wtf? %s" % name, 0)
+          self.log(self.logger.ERROR, "unknown plugin hook detected. wtf? %s" % name)
       elif hook.startswith('outfeeds-'):
         continue
       else:
-        self.log("unknown hook detected. wtf? %s" % hook, 0)
+        self.log(self.logger.ERROR, "unknown hook detected. wtf? %s" % hook)
         
   def handle_line(self, line, key_id, timestamp):
     #print "should handle line for key_id %i: %s" % (key_id, line)
@@ -412,7 +420,7 @@ class main(threading.Thread):
     else:
       comment = '' 
     if not command in self.command_mapper:
-      self.log("got unknown command: %s" % line, 3)
+      self.log(self.logger.INFO, "got unknown command: %s" % line)
       return
     if self.allowed(key_id, command):
       data, groups = self.command_mapper[command](line)
@@ -425,7 +433,7 @@ class main(threading.Thread):
       data = line.lower().split(" ", 1)[1]
       accepted = 0
       reason_id = 1
-      self.log("not authorized for '%s': %i" % (command, key_id), 3)
+      self.log(self.logger.DEBUG, "not authorized for '%s': %i" % (command, key_id))
     if command in self.command_cache:
       command_id = self.command_cache[command]
     else: 
@@ -438,18 +446,18 @@ class main(threading.Thread):
       pass
 
   def handle_srnd_acl_mod(self, line):
-    self.log("handle acl_mod: %s" % line, 5)
+    self.log(self.logger.DEBUG, "handle acl_mod: %s" % line)
     try:
       key, flags, local_nick = line.split(" ", 3)[1:]
       if int(self.censordb.execute('SELECT count(key) FROM keys WHERE key = ?', (key,)).fetchone()[0]) == 0:
-        self.log("handle acl_mod: new key", 4)
+        self.log(self.logger.DEBUG, "handle acl_mod: new key")
         self.censordb.execute("INSERT INTO keys (key, local_name, flags) VALUES (?, ?, ?)", (key, local_nick, flags))
       else:  
         self.censordb.execute("UPDATE keys SET local_name = ?, flags = ? WHERE key = ?", (local_nick, flags, key))
       self.sqlite_censor_conn.commit()
       self.allowed_cache = dict()
     except Exception as e:
-      self.log("could not handle srnd-acl-mod: %s" % e, 1)
+      self.log(self.logger.WARNING, "could not handle srnd-acl-mod: %s, line = '%s'" % (e, line))
     return (key, None)
 
   def handle_delete(self, line, debug=False):
@@ -457,12 +465,12 @@ class main(threading.Thread):
     #time_sql = float(0)
     #self.log("got deletion request: %s" % line, 3)
     command, message_id = line.split(" ", 1)
-    self.log("should delete %s" % message_id, 3)
+    self.log(self.logger.DEBUG, "should delete %s" % message_id)
     
     #timestamp_start = time.time()
     if os.path.exists(os.path.join("articles", "restored", message_id)):
       #time_fs += time.time() - timestamp_start
-      self.log("%s has been restored, ignoring delete" % message_id, 2)
+      self.log(self.logger.DEBUG, "%s has been restored, ignoring delete" % message_id)
       #if debug:
       #  return (message_id, None, time_fs, time_sql)
       return (message_id, None)
@@ -477,18 +485,18 @@ class main(threading.Thread):
     #timestamp_start = time.time()
     if os.path.exists(os.path.join('articles', 'censored', message_id)):
       #time_fs += time.time() - timestamp_start
-      self.log("already deleted, still handing over to redistribute further", 4)
+      self.log(self.logger.DEBUG, "already deleted, still handing over to redistribute further")
     elif os.path.exists(os.path.join("articles", message_id)):
       #time_fs += time.time() - timestamp_start
-      self.log("moving %s to articles/censored/" % message_id, 3)
+      self.log(self.logger.DEBUG, "moving %s to articles/censored/" % message_id)
       os.rename(os.path.join("articles", message_id), os.path.join("articles", "censored", message_id))
-      self.log("deleting groups/%s/%i" % (row[0], row[1]), 3)
+      self.log(self.logger.DEBUG, "deleting groups/%s/%i" % (row[0], row[1]))
       for group in group_rows:
         try:
           # FIXME race condition with dropper if currently processing this very article
           os.unlink(os.path.join("groups", str(group[0]), str(group[1])))
         except Exception as e:
-          self.log("could not delete: %s" % e, 3)
+          self.log(self.logger.WARNING, "could not delete %s: %s" % (os.path.join("groups", str(group[0]), str(group[1])), e))
     elif not os.path.exists(os.path.join('articles', 'censored', message_id)):
       #time_fs += time.time() - timestamp_start
       f = open(os.path.join('articles', 'censored', message_id), 'w')
@@ -508,12 +516,7 @@ class main(threading.Thread):
     return (group_name, (group_name,))
   
   def handle_sticky(self, line):
-    self.log("got sticky request: %s" % line, 2)
-  
-  def log(self, message, debuglevel):
-    if self.debug >= debuglevel:
-      for line in "{0}".format(message).split('\n'):
-        print "[%s] %s" % (self.name, line)
+    self.log(self.logger.DEBUG, "got sticky request: %s" % line)
 
 if __name__ == '__main__':
   print "[%s] %s" % ("censor", "this plugin can't run as standalone version.")

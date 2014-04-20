@@ -8,17 +8,29 @@ import threading
 import sqlite3
 import random
 from distutils.dir_util import copy_tree
+import traceback
 
 import dropper
 import feed
 
 class SRNd(threading.Thread):
-  def __init__(self):
 
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log('SRNd', message, loglevel)
+
+  def __init__(self, logger):
+    self.logger = logger
+    # FIXME: read SRNd loglevel from SRNd.conf
+    self.loglevel = self.logger.INFO
     self.read_and_parse_config()
-
-    self.debug = 2
-
+    self.log(self.logger.VERBOSE,  'srnd test logging with VERBOSE')
+    self.log(self.logger.DEBUG,    'srnd test logging with DEBUG')
+    self.log(self.logger.INFO,     'srnd test logging with INFO')
+    self.log(self.logger.WARNING,  'srnd test logging with WARNING')
+    self.log(self.logger.ERROR,    'srnd test logging with ERROR')
+    self.log(self.logger.CRITICAL, 'srnd test logging with CRITICAL')
+    
     # create some directories
     for directory in ('filesystem', 'outfeeds', 'plugins'):
       dir = os.path.join(self.data_dir, 'config', 'hooks', directory)
@@ -27,19 +39,21 @@ class SRNd(threading.Thread):
       os.chmod(dir, 0o777) # FIXME think about this, o+r should be enough?
 
     # install / update plugins
-    print "[SRNd] installing / updating plugins"
+    self.log(self.logger.INFO, "installing / updating plugins")
     for directory in os.listdir('install_files'):
       result = copy_tree(os.path.join('install_files', directory), os.path.join(self.data_dir, directory), preserve_times=True, update=True)
     if self.setuid != '':
-      print "[SRNd] fixing plugin permissions"
+      self.log(self.logger.INFO, "fixing plugin permissions")
       for directory in os.listdir(os.path.join(self.data_dir, 'plugins')):
         try:
           os.chown(os.path.join(self.data_dir, 'plugins', directory), self.uid, self.gid)
         except OSError as e:
           if e.errno == 1:
-            print "[warning] couldn't change owner of {0}. {1} will likely fail to create own directories.".format(os.path.join(self.data_dir, 'plugins', directory), directory)
+            # FIXME what does this errno actually mean? write actual descriptions for error codes -.-
+            self.log(self.logger.WARNING, "couldn't change owner of %s. %s will likely fail to create own directories." % (os.path.join(self.data_dir, 'plugins', directory), directory))
           else:
-            print "[error] trying to chown plugin directory {0} failed: ".format(os.path.join(self.data_dir, 'plugins', directory)), e
+            # FIXME: exit might not allow logger to actually output the message.
+            self.log(self.logger.CRITICAL, "trying to chown plugin directory %s failed: %s" % (os.path.join(self.data_dir, 'plugins', directory), e))
             exit(1)
 
     # start listening
@@ -50,18 +64,20 @@ class SRNd(threading.Thread):
     self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     try:
-      print "[SRNd] start listening at {0}:{1}".format(self.ip, self.port)
+      self.log(self.logger.INFO, 'start listening at %s:%i' % (self.ip, self.port))
       self.socket.bind((self.ip, self.port))
     except socket.error as e:
       if e.errno == 13:
-        print "[error] current user account does not have CAP_NET_BIND_SERVICE: ", e
-        print "        You have three options:"
-        print "         - run SRNd as root"
-        print "         - assign CAP_NET_BIND_SERVICE to the user you intend to use"
-        print "         - use a port > 1024 by setting bind_port at {0}".format(os.path.join(self.data_dir, 'config', 'SRNd.conf'))
+        # FIXME: exit might not allow logger to actually output the message.
+        self.log(self.logger.CRITICAL,  '''[error] current user account does not have CAP_NET_BIND_SERVICE: %s
+        You have three options:
+         - run SRNd as root
+         - assign CAP_NET_BIND_SERVICE to the user you intend to use
+         - use a port > 1024 by setting bind_port at %s''' % (e, os.path.join(self.data_dir, 'config', 'SRNd.conf')))
         exit(2)
       elif e.errno == 98:
-        print "[error] {0}:{1} already in use, change to a different port by setting bind_port at {2}".format(self.ip, self.port, os.path.join(self.data_dir, 'config', 'SRNd.conf'))
+        # FIXME: exit might not allow logger to actually output the message.
+        self.log(self.logger.CRITICAL, '[error] %s:%i already in use, change to a different port by setting bind_port at %s' % (self.ip, self.port, os.path.join(self.data_dir, 'config', 'SRNd.conf')))
         exit(2)
       else:
         raise e
@@ -76,7 +92,7 @@ class SRNd(threading.Thread):
     self.update_plugins()
 
     if self.chroot:
-      print "[SRNd] chrooting.."
+      self.log(self.logger.INFO, 'chrooting..')
       try:
         os.chroot('.')
       except OSError as e:
@@ -91,7 +107,7 @@ class SRNd(threading.Thread):
           raise e
 
     if self.setuid != '':
-      print "[SRNd] dropping privileges.."
+      self.log(self.logger.INFO, 'dropping privileges..')
       try:
         os.setgid(self.gid)
         os.setuid(self.uid)
@@ -154,7 +170,7 @@ class SRNd(threading.Thread):
         if line[0] == '#':
           continue
         if not '=' in line:
-          print "[SRNd] error: no = in setting '{0}'".format(line)
+          self.log(self.logger.WARNING, 'no = in setting \'%s\'' % line)
           continue
         key = line.split('=', 1)[0]
         value = line.split('=', 1)[1]
@@ -172,7 +188,7 @@ class SRNd(threading.Thread):
           elif value.lower() == 'false':
             self.ipv6 = False
           else:
-            print "[SRNd] bind_user_ipv6: unknown value. only accepting true or false. using default of false"
+            self.log(self.logger.WARNING, 'bind_user_ipv6: unknown value. only accepting true or false. using default of false')
             self.ipv6 = False
         elif key == 'data_dir':
           self.data_dir = value
@@ -182,7 +198,7 @@ class SRNd(threading.Thread):
           elif value.lower() == 'false':
             self.chroot = False
           else:
-            print "[SRNd] use_chroot: unknown value. only accepting true or false. using default of true"
+            self.log(self.logger.WARNING, 'use_chroot: unknown value. only accepting true or false. using default of true')
             self.chroot = True
         elif key == 'setuid':
           self.setuid = value
@@ -196,7 +212,7 @@ class SRNd(threading.Thread):
             error = True
           if error:
             self.infeed_debug = 2
-            print "[SRNd] infeed_debuglevel: only accepting integer between 0 and 5. using default of 2"
+            self.log(self.logger.WARNING, 'infeed_debuglevel: only accepting integer between 0 and 5. using default of 2')
         elif key == 'dropper_debuglevel':
           error = False
           try:
@@ -207,7 +223,7 @@ class SRNd(threading.Thread):
             error = True
           if error:
             self.dropper_debug = 2
-            print "[SRNd] dropper_debuglevel: only accepting integer between 0 and 5. using default of 2"
+            self.log(self.logger.WARNING, 'dropper_debuglevel: only accepting integer between 0 and 5. using default of 2')
         elif key == 'instance_name':
           error = False
           if ' ' in value:
@@ -216,8 +232,7 @@ class SRNd(threading.Thread):
             self.instance_name = value
           if error:
             self.instance_name = 'SRNd'
-            print "[SRNd] instance_name contains a space. using default of 'SRNd'"
-          
+            self.log(self.logger.WARNING, 'instance_name contains a space. using default of \'SRNd\'')
 
       # initialize required variables if currently unset
       if self.ip == '':
@@ -305,7 +320,7 @@ class SRNd(threading.Thread):
       f.close()
 
   def update_hooks(self):
-    print "[SRNd] reading hook configuration.."
+    self.log(self.logger.INFO, 'reading hook configuration..')
     self.hooks = dict()
     self.hook_blacklist = dict()
     total = 0
@@ -333,7 +348,7 @@ class SRNd(threading.Thread):
             # blacklist
             line = line[1:]
             if line[0] == '*':
-              print "[SRNd] invalid blacklist rule: !* is not allowed. everything not whitelisted will be rejected automatically."
+              self.log(self.logger.WARNING, 'invalid blacklist rule: !* is not allowed. everything not whitelisted will be rejected automatically.')
               line = f.readline()
               continue
             if not line in self.hook_blacklist:
@@ -361,23 +376,25 @@ class SRNd(threading.Thread):
       total += found
     #if not '*' in self.hooks:
     #  self.hooks['*'] = list()
+    output_log = list()
     if total > 0:
-      print "[SRNd] found {0} hooks:".format(total)
-      print "whitelist"
+      output_log.append('found %i hooks:' % total)
+      output_log.append('whitelist')
       for pattern in self.hooks:
-        print ' ' + pattern
+        output_log.append(' %s' % pattern)
         for hook in self.hooks[pattern]:
-          print '   ' + hook
-      print "blacklist"
+          output_log.append('   %s' % hook)
+      output_log.append('blacklist')
       for pattern in self.hook_blacklist:
-        print ' ' + pattern
+        output_log.append(' %s' % pattern)
         for hook in self.hook_blacklist[pattern]:
-          print '   ' + hook
+          output_log.append('   %s' % hook)
+      self.log(self.logger.INFO, '\n'.join(output_log))
     else:
-      print "[SRNd] did not find any hook"
+      self.log(self.logger.WARNING, 'did not find any hook')
 
   def update_plugins(self):
-    print "[SRNd] importing plugins.."
+    self.log(self.logger.INFO, 'importing plugins..')
     new_plugins = list()
     current_plugin = None
     errors = False
@@ -408,23 +425,24 @@ class SRNd(threading.Thread):
           if 'SRNd' in args:
             args['SRNd'] = self
           current_plugin = __import__(plugin)
-          self.plugins[name] = current_plugin.main(name, args)
+          self.plugins[name] = current_plugin.main(name, self.logger, args)
           new_plugins.append(name)
         except Exception as e:
           errors = True
-          print "[SRNd] error while importing {0}: {1}".format(name, e)
+          self.log(self.logger.ERROR, 'error while importing %s: %s' % (name, e))
           if name in self.plugins:
             del self.plugins[name]
           continue
     del current_plugin
     if errors:
-      print "[SRNd] could not start at least one plugin. Terminating."
+      self.log(self.logger.CRITICAL, 'could not import at least one plugin. Terminating.')
+      self.log(self.logger.CRITICAL, traceback.format_exc())
       exit(1)
-    print "[SRNd] added {0} new plugins".format(len(new_plugins))
+    self.log(self.logger.INFO, 'added %i new plugins' % len(new_plugins))
     # TODO: stop and remove plugins not listed at config/plugins anymore
 
   def update_outfeeds(self):
-    print "[SRNd] reading outfeeds.."
+    self.log(self.logger.INFO, 'reading outfeeds..')
     counter_new = 0
     current_feedlist = list()
     for outfeed in os.listdir(os.path.join('config', 'hooks', 'outfeeds')):
@@ -468,16 +486,16 @@ class SRNd(threading.Thread):
             try:
               proxy_port = int(proxy_port)
               proxy = (proxy_type, proxy_ip, proxy_port)
-              self.log("starting outfeed %s using proxy: %s" % (name, str(proxy)), 2)
+              self.log(self.logger.INFO, "starting outfeed %s using proxy: %s" % (name, str(proxy)), 2)
             except:
               pass
         if name not in self.feeds:
           try:
-            self.feeds[name] = feed.feed(self, outstream=True, host=host, port=port, sync_on_startup=sync_on_startup, proxy=proxy, debug=debuglevel)
+            self.feeds[name] = feed.feed(self, self.logger, outstream=True, host=host, port=port, sync_on_startup=sync_on_startup, proxy=proxy, debug=debuglevel)
             self.feeds[name].start()
             counter_new += 1
           except Exception as e:
-            self.log("could not start outfeed %s: %s" % (name, e), 0)
+            self.log(self.logger.WARNING, 'could not start outfeed %s: %s' % (name, e), 0)
     counter_removed = 0
     feeds = list()
     for name in self.feeds:
@@ -487,25 +505,25 @@ class SRNd(threading.Thread):
       if not name in current_feedlist and name in self.feeds:
         self.feeds[name].shutdown()
         counter_removed += 1
-    print "[SRNd] outfeeds added: {0}".format(counter_new)
-    print "[SRNd] outfeeds removed: {0}".format(counter_removed)
+    self.log(self.logger.INFO, 'outfeeds added: %i' % counter_new)
+    self.log(self.logger.INFO, 'outfeeds removed: %i' % counter_removed)
 
   def update_hooks_outfeeds_plugins(self, signum, frame):
     self.update_outfeeds()
     self.update_plugins()
     self.update_hooks()
 
-  def log(self, message, debuglevel):
-    if self.debug >= debuglevel:
-      for line in message.split("\n"):
-        print "[%s] %s" % ("SRNd", line.rstrip("\r\n"))
+  #def log(self, message, debuglevel):
+  #  if self.debug >= debuglevel:
+  #    for line in message.split("\n"):
+  #      print "[%s] %s" % ("SRNd", line.rstrip("\r\n"))
 
   def run(self):
     self.running = True
     self.feeds = dict()
     self.update_outfeeds()
     if len(self.plugins) > 0:
-      print "[SRNd] starting plugins.."
+      self.log(self.logger.INFO, 'starting plugins..')
       for plugin in self.plugins:
         self.plugins[plugin].start()
       time.sleep(0.1)
@@ -515,7 +533,7 @@ class SRNd(threading.Thread):
     for group in os.listdir('groups'):
       group_dir = os.path.join('groups', group)
       if os.path.isdir(group_dir):
-        self.log("startup sync, checking %s.." % group, 3)
+        self.log(self.logger.DEBUG, 'startup sync, checking %s..' % group)
         current_sync_targets = list()
         for group_item in self.hooks:
           if (group_item[-1] == '*' and group.startswith(group_item[:-1])) or group == group_item:
@@ -540,20 +558,20 @@ class SRNd(threading.Thread):
                   name = 'outfeed-' + ':'.join(parts[:-1]) + '-' + parts[-1]
                   if name in self.feeds:
                     if self.feeds[name].sync_on_startup and name not in current_sync_targets:
-                      self.log("startup sync, adding %s" % name, 3)
+                      self.log(self.logger.DEBUG, 'startup sync, adding %s' % name)
                       current_sync_targets.append(name)
                   else:
-                    self.log("unknown outfeed detected. wtf? %s" % name, 0)
+                    self.log(self.logger.WARNING, 'unknown outfeed detected. wtf? %s' % name)
                 elif current_hook.startswith('plugins-'):
                   name = 'plugin-' + current_hook[8:]
                   if name in self.plugins:
                     if self.plugins[name].sync_on_startup and name not in current_sync_targets:
-                      self.log("startup sync, adding %s" % name, 3)
+                      self.log(self.logger.DEBUG, 'startup sync, adding %s' % name)
                       current_sync_targets.append(name)
                   else:
-                    self.log("unknown plugin detected. wtf? %s" % name, 0)
+                    self.log(self.logger.WARNING, 'unknown plugin detected. wtf? %s' % name)
                 else:
-                  self.log("unknown hook detected. wtf? %s" % hook, 0)
+                  self.log(self.logger.WARNING, 'unknown hook detected. wtf? %s' % hook)
         # got all whitelist matching hooks for current group which are not matched by blacklist as well in current_sync_targets. hopefully.
         if len(current_sync_targets) > 0:
           file_list = os.listdir(group_dir)
@@ -566,8 +584,8 @@ class SRNd(threading.Thread):
               elif current_hook.startswith('plugin-'):
                 self.plugins[current_hook].add_article(message_id)
               else:
-                self.log("unknown sync_hook detected. wtf? %s" % hook, 0)
-    self.log("startup_sync done. hopefully.", 3)
+                self.log(self.logger.WARNING, 'unknown sync_hook detected. wtf? %s' % hook)
+    self.log(self.logger.DEBUG, 'startup_sync done. hopefully.')
     del current_sync_targets
     
     #files = filter(lambda f: os.path.isfile(os.path.join('articles', f)), os.listdir('articles'))
@@ -583,13 +601,10 @@ class SRNd(threading.Thread):
         con = self.socket.accept()
         name = 'infeed-{0}-{1}'.format(con[1][0], con[1][1])
         if name not in self.feeds:
-          if con[1][0] != '127.0.0.1':
-            self.feeds[name] = feed.feed(self, connection=con, debug=self.infeed_debug)
-          else:
-            self.feeds[name] = feed.feed(self, connection=con, debug=self.infeed_debug)
+          self.feeds[name] = feed.feed(self, self.logger, connection=con, debug=self.infeed_debug)
           self.feeds[name].start()
         else:
-          print "[SRNd] got connection from {0} but its still in feeds. wtf?".format(name)
+          self.log(self.logger.WARNING, 'got connection from %s but its still in feeds. wtf?' % name)
       except socket.error as e:
         if e.errno == 22:
           break
@@ -604,7 +619,7 @@ class SRNd(threading.Thread):
     if name in self.feeds:
       del self.feeds[name]
     else:
-      print "[SRNd] should remove {0} but not in dict. wtf?".format(name)
+      self.log(self.logger.WARNING,  'should remove %s but not in dict. wtf?' % name)
 
   def relay_dropper_handler(self, signum, frame):
     #TODO: remove, this is not needed anymore at all?
@@ -616,16 +631,17 @@ class SRNd(threading.Thread):
   def shutdown(self):
     self.dropper.running = False
     self.running = False
-    print "[SRNd] closing listener.."
+    self.log(self.logger.INFO, 'closing listener..')
     self.socket.shutdown(socket.SHUT_RDWR)
-    print "[SRNd] closing plugins.."
+    self.log(self.logger.INFO, 'closing plugins..')
     for plugin in self.plugins:
       self.plugins[plugin].shutdown()
-    print "[SRNd] closing feeds.."
+    self.log(self.logger.INFO, 'closing feeds..')
     feeds = list()
     for name in self.feeds:
       feeds.append(name)
     for name in feeds:
       if name in self.feeds:
         self.feeds[name].shutdown()
-    print "[SRNd] waiting for feeds to shut down.."
+    self.log(self.logger.INFO, 'waiting for feeds to shut down..')
+    self.logger.running = False

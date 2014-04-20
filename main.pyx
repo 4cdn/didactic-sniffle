@@ -6,25 +6,47 @@ import threading
 import platform
 
 import SRNd
+import logger
+
+log_targets = (
+  { 'target':   'stderr',
+    'loglevel': ('all',),
+    'format':   '${date} ${loglevel} [${source}] ${message}\n',
+    'date_fmt': '%H:%M:%S'
+  },
+  { 'target':   'SRNd.log',
+    'loglevel': ('warn', 'err', 'crit'),
+    'date_fmt': '%Y/%m/%d %H:%M:%S'
+  }
+)
+logger = logger.logger(log_targets)
+loglevel_own = logger.INFO
+logger.start()
+
+def log(loglevel, message):
+  if loglevel >= loglevel_own:
+    logger.log('SRNd', message, loglevel)
 
 if platform.system().lower() == 'linux':
-  print "[SRNd] linux detected, using F_NOTIFY"
+  log(logger.INFO, 'linux detected, using F_NOTIFY')
   import fcntl
   bsd = False
 elif platform.system().lower().endswith('bsd'):
-  print "[SRNd] *BSD detected: %s, using select.kqueue()" % platform.system()
+  log(logger.INFO, '*BSD detected: %s, using select.kqueue()' % platform.system())
   import select
   try:
     queue = select.kqueue()
     bsd = True
   except Exception as e:
-    print "[SRNd] could not load BSD kqueue: %s" % e
+    log(logger.CRITICAL, 'could not load BSD kqueue: %s' % e)
+    logger.running = False
     exit(1)
 else:
-  print "[SRNd] unsupported platform: '%s'" % platform.system()
+  log(logger.CRITICAL, 'unsupported platform: \'%s\'' % platform.system())
+  logger.running = False
   exit(1)
 
-srnd = SRNd.SRNd()
+srnd = SRNd.SRNd(logger)
 fd = os.open(srnd.watching(), os.O_RDONLY | os.O_NONBLOCK)
 
 if bsd:
@@ -36,27 +58,32 @@ else:
 
 signal.signal(signal.SIGHUP, srnd.update_hooks_outfeeds_plugins)
 srnd.start()
-while not srnd.dropper.running:
-  time.sleep(0.5)
-print "[SRNd] starting initial check for new articles"
-srnd.dropper.handler_progress_incoming(None, None)
-while True:
-  try:
+terminate = False
+try:
+  while not srnd.dropper.running:
+    time.sleep(0.5)
+  log(logger.INFO, 'starting initial check for new articles')
+  srnd.dropper.handler_progress_incoming(None, None)
+except KeyboardInterrupt:
+  terminate = True
+try:
+  while not terminate:
     if bsd:
-      print "[SRNd] reading events.."
-      print "[SRNd] got events: '%s'" % str(queue.control(watching, 1, None))
+      log(logger.DEBUG, 'reading events..')
+      log(logger.DEBUG, 'got events: \'%s\'' % str(queue.control(watching, 1, None)))
       srnd.dropper.handler_progress_incoming(None, None)
     else:
       time.sleep(3600)
-  except KeyboardInterrupt:
-    print
-    print "[SRNd] shutting down.."
-    srnd.shutdown()
-    for thread in threading.enumerate():
-      #print "joining ", thread
-      try:
-        thread.join()
-      except RuntimeError as e:
-        pass
-    print "[SRNd] bye"
-    exit(0)
+except KeyboardInterrupt:
+  print
+  pass
+log(logger.INFO, 'shutting down..')
+srnd.shutdown()
+for thread in threading.enumerate():
+  #print "joining ", thread
+  try:
+    thread.join()
+  except RuntimeError as e:
+    pass
+log(logger.INFO, 'bye')
+exit(0)

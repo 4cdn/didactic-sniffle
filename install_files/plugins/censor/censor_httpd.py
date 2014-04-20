@@ -75,7 +75,7 @@ class censor(BaseHTTPRequestHandler):
       else:
         self.send_keys()
       return
-    self.origin.log("illegal access: {0}".format(self.path), 2)
+    self.origin.log(self.origin.logger.WARNING, "illegal access: %s" % self.path)
     self.send_response(200)
     self.send_header('Content-type', 'text/plain')
     self.end_headers()
@@ -139,7 +139,7 @@ class censor(BaseHTTPRequestHandler):
       else:
         self.send_keys()
       return
-    self.origin.log("illegal access: {0}".format(self.path), 2)
+    self.origin.log(self.origin.logger.WARNING, "illegal access: %s" % self.path)
     self.send_response(200)
     self.send_header('Content-type', 'text/plain')
     self.end_headers()
@@ -182,8 +182,12 @@ class censor(BaseHTTPRequestHandler):
       }
     )
     if not 'secret' in post_vars:
+      self.origin.log(self.origin.logger.WARNING, 'admin panel login: no secret key received')
+      self.origin.log(self.origin.logger.WARNING, self.headers)
       return False
     if len(post_vars['secret'].value) != 64:
+      self.origin.log(self.origin.logger.WARNING, 'admin panel login: invalid secret key received, length != 64')
+      self.origin.log(self.origin.logger.WARNING, self.headers)
       return False
     try:
       public = hexlify(nacl.signing.SigningKey(unhexlify(post_vars['secret'].value)).verify_key.encode())
@@ -194,7 +198,8 @@ class censor(BaseHTTPRequestHandler):
       else:
         return False
     except Exception as e:
-      self.origin.log(e, 0)
+      self.origin.log(self.origin.logger.WARNING, 'admin panel login: invalid secret key received: %s' % e)
+      self.origin.log(self.origin.logger.WARNING, self.headers)
       return False
 
   def send_redirect(self, target, message, wait=0):
@@ -749,9 +754,10 @@ class censor(BaseHTTPRequestHandler):
     return out
 
   def die(self, message=''):
-    self.origin.log("{0}:{1} wants to fuck around: {2}".format(self.client_address[0], self.client_address[1], message), 1)
+    self.origin.log(self.origin.logger.WARNING, "%s:%i wants to fuck around, %s" % (self.client_address[0], self.client_address[1], message))
+    self.origin.log(self.origin.logger.WARNING, self.headers)
     if self.origin.reject_debug:
-      self.send_error('don\'t fuck around here mkay\n{0}'.format(message))
+      self.send_error('don\'t fuck around here mkay\n%s' % message)
     else:
       self.send_error('don\'t fuck around here mkay')
 
@@ -783,16 +789,16 @@ class censor(BaseHTTPRequestHandler):
     )
     
     if 'secret' not in post_vars:
-      self.die('%s not in post_vars' % item)
+      self.die('local moderation request: %s not in post_vars' % item)
       return
     secret = post_vars['secret'].value
     if len(secret) != 64:
-      self.die('secret has wrong length: %i instead of %i' % (len(secret), 64))
+      self.die('local moderation request: invalid secret key received')
       return
     try:
       keypair = nacl.signing.SigningKey(unhexlify(secret))
     except Exception as e:
-      self.die(e)
+      self.die('local moderation request: invalid secret key received: %s' % e)
     for key in ('purge', 'purge_root'):
       if key in post_vars:
         purges = post_vars.getlist(key)
@@ -800,20 +806,22 @@ class censor(BaseHTTPRequestHandler):
           try:
             lines.append("delete %s" % self.__get_message_id_by_hash(item))
           except Exception as e:
-            self.origin.log("could not find message_id for hash %s: %s" % (item, e), 2)
+            self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find message_id for hash %s: %s" % (item, e))
+            self.origin.log(self.origin.logger.WARNING, self.headers)
     if 'delete_a' in post_vars:
       delete_attachments = post_vars.getlist('delete_a')
       for item in delete_attachments:
         try:
           lines.append("overchan-delete-attachment %s" % self.__get_message_id_by_hash(item))
         except Exception as e:
-          self.origin.log("could not find message_d for hash %s: %s" % (item, e), 2)
+            self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find message_id for hash %s: %s" % (item, e))
+            self.origin.log(self.origin.logger.WARNING, self.headers)
     if len(lines) == 0:
-      self.die('nothing to do')
+      self.die('local moderation request: nothing to do')
       return
     #lines.append("")
     article = self.origin.template_message_control_inner.format(sender, now, newsgroups, subject, uid_message_id, self.origin.uid_host, "\n".join(lines))
-    print "'%s'" % article
+    #print "'%s'" % article
     hasher = sha512()
     old_line = None
     for line in article.split("\n")[:-1]:
@@ -821,7 +829,7 @@ class censor(BaseHTTPRequestHandler):
         hasher.update(old_line)
       old_line = '%s\r\n' % line
     hasher.update(old_line.replace("\r\n", ""))
-    keypair = nacl.signing.SigningKey(unhexlify(secret))
+    #keypair = nacl.signing.SigningKey(unhexlify(secret))
     signature = hexlify(keypair.sign(hasher.digest()).signature)
     pubkey = hexlify(keypair.verify_key.encode())
     signed = self.origin.template_message_control_outer.format(sender, now, newsgroups, subject, uid_message_id, self.origin.uid_host, pubkey, signature, article)
@@ -862,41 +870,46 @@ class censor(BaseHTTPRequestHandler):
         raise e
 
 class censor_httpd(threading.Thread):
+  
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log(self.name, message, loglevel)
 
-  def __init__(self, thread_name, args):
+  def __init__(self, thread_name, logger, args):
     threading.Thread.__init__(self)
     self.name = thread_name
+    self.logger = logger
     if 'debug' not in args:
-      self.debug = 2
-      self.log('debuglevel not defined, using default of debug = 2', 2)
+      self.loglevel = self.logger.INFO
+      self.log(self.logger.DEBUG, 'debuglevel not defined, using default of debug = %i' % self.loglevel)
     else:
       try:
-        self.debug = int(args['debug'])
-        if self.debug < 0 or self.debug > 5:
-          self.debug = 2
-          self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+        self.loglevel = int(args['debug'])
+        if self.loglevel < 0 or self.loglevel > 5:
+          self.loglevel = self.logger.INFO
+          self.log(self.logger.WARNING, 'debuglevel not between 0 and 5, using default of debug = %i' % self.loglevel)
         else:
-          self.log('using debuglevel {0}'.format(self.debug), 3)
+          self.log(self.logger.DEBUG, 'using debuglevel %i' % self.loglevel)
       except ValueError as e:
-        self.debug = 2
-        self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
-    self.log('initializing as plugin..', 2)
+        self.loglevel = self.logger.INFO
+        self.log(self.logger.WARNING, 'debuglevel not between 0 and 5, using default of debug = %i' % self.loglevel)
+    self.log(self.logger.DEBUG, 'initializing as plugin..')
     self.should_terminate = False
     for key in ('bind_ip', 'bind_port', 'template_directory', 'censor', 'uid_host'):
       if not key in args:
-        self.log('{0} not in args'.format(key), 0)
+        self.log(self.logger.CRITICAL, '%s not in args' % key)
         self.should_terminate = True
     if self.should_terminate:
-      self.log('terminating..'.format(key), 0)
+      self.log(self.logger.CRITICAL, 'terminating..')
       return
     self.uid_host = args['uid_host']
     self.ip = args['bind_ip']
     try:
       self.port = int(args['bind_port'])
     except ValueError as e:
-      self.log("{0} is not a valid bind_port", 0)
+      self.log(self.logger.CRITICAL, "'%s' is not a valid bind_port" % args['bind_port'])
       self.should_terminate = True
-      self.log('terminating..'.format(key), 0)
+      self.log(self.logger.CRITICAL, 'terminating..')
       return
     if 'bind_use_ipv6' in args:
       tmp = args['bind_use_ipv6']
@@ -905,13 +918,13 @@ class censor_httpd(threading.Thread):
       elif tmp.lower() == 'false':
         self.ipv6 = False
       else:
-        self.log("{0} is not a valid value for bind_use_ipv6. only true and false allowed.", 0)
+        self.log(self.logger.CRITICAL, "'%s' is not a valid value for bind_use_ipv6. only true and false allowed." % args['bind_use_ipv6'])
         self.should_terminate = True
-        self.log('terminating..'.format(key), 0)
+        self.log(self.logger.CRITICAL, 'terminating..')
         return
     #self.censor = args['censor']
 
-    self.log('initializing httpserver..', 3)
+    self.log(self.logger.DEBUG, 'initializing httpserver..')
     self.httpd = HTTPServer((self.ip, self.port), censor)
     if 'reject_debug' in args:
       tmp = args['reject_debug']
@@ -920,8 +933,9 @@ class censor_httpd(threading.Thread):
       elif tmp.lower() == 'false':
         self.httpd.reject_debug = False
       else:
-        self.log("{0} is not a valid value for reject_debug. only true and false allowed. setting value to false.", 0)
+        self.log(self.logger.WARNING, "'%s' is not a valid value for reject_debug. only true and false allowed. setting value to false.")
     self.httpd.log = self.log
+    self.httpd.logger = self.logger
     self.httpd.rnd = open("/dev/urandom", "r")
     self.httpd.sessions = dict()
     self.httpd.uid_host = self.uid_host
@@ -930,7 +944,7 @@ class censor_httpd(threading.Thread):
     self.httpd.breaker = re.compile('([^ ]{16})')
 
     # read templates
-    self.log('reading templates..', 3)
+    self.log(self.logger.DEBUG, 'reading templates..')
     template_directory = args['template_directory']
     f = open(os.path.join(template_directory, 'keys.tmpl'), 'r')
     self.httpd.template_keys = f.read()
@@ -979,7 +993,7 @@ class censor_httpd(threading.Thread):
     self.httpd.shutdown()
 
   def add_article(self, message_id, source="article"):
-    self.log('this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])), 0)
+    self.log(self.logger.WARNING, 'this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])))
 
   def run(self):
     if self.should_terminate:
@@ -994,18 +1008,13 @@ class censor_httpd(threading.Thread):
     # FIXME get overchan db path via arg
     self.httpd.sqlite_overchan_conn = sqlite3.connect('plugins/overchan/overchan.db3', timeout=15)
     self.httpd.sqlite_overchan = self.httpd.sqlite_overchan_conn.cursor()
-    self.log('start listening at http://{0}:{1}'.format(self.ip, self.port), 1)
+    self.log(self.logger.INFO, 'start listening at http://%s:%i' % (self.ip, self.port))
     self.httpd.serve_forever()
     self.httpd.sqlite_hasher_conn.close()
     self.httpd.sqlite_censor_conn.close()
     self.httpd.sqlite_overchan_conn.close()
     self.httpd.rnd.close()
-    self.log('bye', 2)
-
-  def log(self, message, debuglevel):
-    if self.debug >= debuglevel:
-      for line in str(message).split('\n'):
-        print "[{0}] {1}".format(self.name, line)
+    self.log(self.logger.INFO, 'bye')
 
 if __name__ == '__main__':
   print "[%s] %s" % ("censor", "this plugin can't run as standalone version. yet.")

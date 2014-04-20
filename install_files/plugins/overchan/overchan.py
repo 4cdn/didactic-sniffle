@@ -16,6 +16,7 @@ import codecs
 import nacl.signing
 from binascii import unhexlify
 import re
+import traceback
 if __name__ == '__main__':
   import signal
   import fcntl
@@ -24,10 +25,25 @@ else:
 
 class main(threading.Thread):
 
-  def __init__(self, thread_name, args):
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log(self.name, message, loglevel)
+
+  def die(self, message):
+    self.log(self.logger.CRITICAL, message)
+    self.log(self.logger.CRITICAL, 'terminating..')
+    self.should_terminate = True
+    if __name__ == '__main__':
+      exit(1)
+    else:
+      raise Exception(message)
+      return
+
+  def __init__(self, thread_name, logger, args):
     threading.Thread.__init__(self)
     self.name = thread_name
     self.should_terminate = False
+    self.logger = logger
     
     # TODO: move sleep stuff to config table
     self.sleep_threshold = 10
@@ -39,42 +55,28 @@ class main(threading.Thread):
         error += "%s not in arguments\n" % arg
     if error != '':
       error = error.rstrip("\n")
-      for line in error.split("\n"):
-        self.log('error: %s' % line, 0)
-      self.log('terminating', 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        raise Exception(error)
-        return
+      self.die(error)
     self.output_directory = args['output_directory']
     self.database_directory = args['database_directory']
     self.template_directory = args['template_directory']
     self.temp_directory = args['temp_directory']
     self.html_title = args['title']
     if not os.path.exists(self.template_directory):
-      self.log("error: template directory '{0}' does not exist".format(self.template_directory), 0)
-      self.log("terminating", 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        return
+      self.die('error: template directory \'%s\' does not exist' % self.template_directory)
     self.no_file = args['no_file']
     self.invalid_file = args['invalid_file']
     self.document_file = args['document_file']
     self.css_file = args['css_file']
-    self.debug = 2
+    self.loglevel = self.logger.INFO
     if 'debug' in args:
       try:
-        self.debug = int(args['debug'])
-        if self.debug < 0 or self.debug > 5:
-          self.debug = 2
-          self.log("invalid value for debug, using default debug level of 2", 2)
+        self.loglevel = int(args['debug'])
+        if self.loglevel < 0 or self.loglevel > 5:
+          self.loglevel = 2
+          self.log(self.logger.WARNING, 'invalid value for debug, using default debug level of 2')
       except:
-        self.debug = 2
-        self.log("invalid value for debug, using default debug level of 2", 2)
+        self.loglevel = 2
+        self.log(self.logger.WARNING, 'invalid value for debug, using default debug level of 2')
         
     self.regenerate_html_on_startup = True
     if 'generate_all' in args:
@@ -83,57 +85,28 @@ class main(threading.Thread):
 
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
-      self.log("replacement for root posts without picture not found: {0}".format(os.path.join(self.template_directory, self.no_file)), 0)
-      self.log("terminating..", 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        return
+      self.die('replacement for root posts without picture not found: %s' % os.path.join(self.template_directory, self.no_file))
+
     if not os.path.exists(os.path.join(self.template_directory, self.invalid_file)):
-      self.log("replacement for posts with invalid pictures not found: {0}".format(os.path.join(self.template_directory, self.invalid_file)), 0)
-      self.log("terminating..", 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        return
+      self.die('replacement for posts with invalid pictures not found: %s' % os.path.join(self.template_directory, self.invalid_file))
     if not os.path.exists(os.path.join(self.template_directory, self.document_file)):
-      self.log("replacement for posts with documents attached (.pdf, .ps) not found: {0}".format(os.path.join(self.template_directory, self.document_file)), 0)
-      self.log("terminating..", 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        return
+      self.die('replacement for posts with documents attached (.pdf, .ps) not found: %s' % os.path.join(self.template_directory, self.document_file))
     if not os.path.exists(os.path.join(self.template_directory, self.css_file)):
-      self.log("specified CSS file not found in template directory: {0}".format(os.path.join(self.template_directory, self.css_file)), 0)
-      self.log("terminating..", 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        return
+      self.die('specified CSS file not found in template directory: %s' % os.path.join(self.template_directory, self.css_file))
     error = ''
     for template in ('board.tmpl', 'board_threads.tmpl', 'thread_single.tmpl', 'message_root.tmpl', 'message_child_pic.tmpl', 'message_child_nopic.tmpl', 'signed.tmpl', 'help.tmpl'):
       template_file = os.path.join(self.template_directory, template)
       if not os.path.exists(template_file):
-        error += "{0} missing\n".format(template_file)
+        error += '%s missing\n' % template_file
     if error != '':
-      self.log('error:', 0)
-      self.log(error[:-1], 0)
-      self.log('terminating', 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        return
+      error = error.rstrip("\n")
+      self.die(error)
     self.sync_on_startup = False
     if 'sync_on_startup' in args:
       if args['sync_on_startup'].lower() == 'true':
         self.sync_on_startup = True
+
     # TODO use tuple instead and load in above loop. seriously.
-    
     # statics
     f = open(os.path.join(self.template_directory, 'help.tmpl'))
     self.template_help = f.read()
@@ -228,8 +201,8 @@ class main(threading.Thread):
       o.close()
       i.close()
       if not 'watch_dir' in args:
-        self.log("watch_dir not in args.", 0)
-        self.log("terminating", 0)
+        self.log(self.logger.CRITICAL, 'watch_dir not in args')
+        self.log(self.logger.CRITICAL, 'terminating..')
         exit(1)
       else:
         self.watch_dir = args['watch_dir']
@@ -241,7 +214,7 @@ class main(threading.Thread):
         return
 
   def init_plugin(self):
-    self.log("initializing as plugin..", 2)
+    self.log(self.logger.INFO, 'initializing as plugin..')
     try:
       # load required imports for PIL
       something = Image.open(os.path.join(self.template_directory, self.no_file))
@@ -259,21 +232,19 @@ class main(threading.Thread):
       del something
       os.remove(out)
     except IOError as e:
-      self.log("error: can't load PIL library", 0)
-      self.log("terminating..", 0)
-      self.should_terminate = True
+      self.die('error: can\'t load PIL library')
       return False
     self.queue = Queue.Queue()
     return True
 
   def init_standalone(self):
-    self.log("initializing as standalone..", 2)
+    self.log(self.logger.INFO, 'initializing as standalone..')
     signal.signal(signal.SIGIO, self.signal_handler)
     try:
       fd = os.open(self.watching, os.O_RDONLY)
     except OSError as e:
       if e.errno == 2:
-        self.log("{0}".format(e), 0)
+        self.die(e)
         exit(1)
       else:
         raise e
@@ -296,32 +267,23 @@ class main(threading.Thread):
         os.mkdir(directory)
     del required_dirs
     # TODO use softlinks or at least cp instead
-    # TODO remote filesystems (sshfs, not sure about NFS in this context) suck as usual
+    # ^ hardlinks not gonna work because of remote filesystems
+    # ^ softlinks not gonna work because of nginx chroot
+    # ^ => cp
     # FIXME messy code is messy
-    i = open(os.path.join(self.template_directory, self.css_file), 'r')
-    o = open(os.path.join(self.output_directory, 'styles.css'), 'w')
-    o.write(i.read())
-    o.close()
-    i.close()
-    i = open(os.path.join(self.template_directory, 'user.css'), 'r')
-    o = open(os.path.join(self.output_directory, 'user.css'), 'w')
-    o.write(i.read())
-    o.close()
-    i.close()
-    link = os.path.join(self.output_directory, 'img', self.no_file)
-    if not os.path.exists(link):
-      f = open(os.path.join(self.template_directory, self.no_file), 'r')
-      o = open(link, 'w')
-      o.write(f.read())
-      o.close()
-      f.close()
-    link = os.path.join(self.output_directory, 'thumbs', self.no_file)
-    if not os.path.exists(link):
-      f = open(os.path.join(self.template_directory, self.no_file), 'r')
-      o = open(link, 'w')
-      o.write(f.read())
-      o.close()
-      f.close()
+    for file_source, file_target in (
+        (self.css_file, 'styles.css'),
+        ('user.css', 'user.css'),
+        (self.no_file, os.path.join('img', self.no_file)),
+        (self.no_file, os.path.join('thumbs', self.no_file)),
+      ):
+        i = open(os.path.join(self.template_directory, file_source), 'r')
+        o = open(os.path.join(self.output_directory, file_target), 'w')
+        o.write(i.read())
+        o.close()
+        i.close()
+
+    # TODO: generate gen_thumbnail(source, dest) returning true/false
     link = os.path.join(self.output_directory, 'thumbs', self.invalid_file)
     if not os.path.exists(link):
       try:
@@ -335,7 +297,7 @@ class main(threading.Thread):
         something.save(link, optimize=True)
         del something
       except IOError as e:
-        self.log("error: can't save {0}. wtf? {1}".format(link, e), 0)
+        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
     link = os.path.join(self.output_directory, 'thumbs', self.document_file)
     if not os.path.exists(link):
       try:
@@ -349,7 +311,7 @@ class main(threading.Thread):
         something.save(link, optimize=True)
         del something
       except IOError as e:
-        self.log("error: can't save {0}. wtf? {1}".format(link, e), 0)
+        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
     self.regenerate_boards = list()
     self.regenerate_threads = list()
     self.missing_parents = dict()
@@ -406,77 +368,76 @@ class main(threading.Thread):
     
   def handle_control(self, lines, timestamp):
     # FIXME how should board-add and board-del react on timestamps in the past / future
-    self.log("got control message: %s" % lines, 4)
+    self.log(self.logger.DEBUG, 'got control message: %s' % lines)
     root_posts = list()
     for line in lines.split("\n"):
       if line.lower().startswith('overchan-board-add'):
         group_name = line.lower().split(" ")[1]
         if '/' in group_name:
-          self.log("got overchan-board-add with invalid group name: '%s', ignoring" % group_name, 0)
+          self.log(self.logger.WARNING, 'got overchan-board-add with invalid group name: \'%s\', ignoring' % group_name)
           continue
         try:
           self.sqlite.execute('UPDATE groups SET blocked = 0 WHERE group_name = ?', (group_name,))
-          self.log("unblocked existing board: '%s'" % group_name, 1)
+          self.log(self.logger.INFO, 'unblocked existing board: \'%s\'' % group_name)
         except:
           self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group_name, 0, int(time.time())))
-          self.log("added new board: '%s'" % group_name, 1)
+          self.log(self.logger.INFO, 'added new board: \'%s\'' % group_name)
         self.sqlite_conn.commit()
         self.regenerate_all_html()
       elif line.lower().startswith("overchan-board-del"):
         group_name = line.lower().split(" ")[1]
         try:
           self.sqlite.execute('UPDATE groups SET blocked = 1 WHERE group_name = ?', (group_name,))
-          self.log("blocked board: '%s'" % group_name, 1)
+          self.log(self.logger.INFO, 'blocked board: \'%s\'' % group_name)
           self.sqlite_conn.commit()
           self.regenerate_all_html()
         except:
-          self.log("should delete board %s but there is no board with that name" % group_name, 2)
+          self.log(self.logger.WARNING, 'should delete board %s but there is no board with that name' % group_name)
       elif line.lower().startswith("overchan-delete-attachment "):
         message_id = line.lower().split(" ")[1]
         if os.path.exists(os.path.join("articles", "restored", message_id)):
-          self.log("message has been restored: %s. ignoring overchan-delete-attachment" % message_id, 2)
+          self.log(self.logger.DEBUG, 'message has been restored: %s. ignoring overchan-delete-attachment' % message_id)
           continue
         row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id, received FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
-          self.log("should delete attachments for message_id %s but there is no article matching this message_id" % message_id, 3)
+          self.log(self.logger.DEBUG, 'should delete attachments for message_id %s but there is no article matching this message_id' % message_id)
           continue
         #if row[4] > timestamp:
         #  self.log("post more recent than control message. ignoring delete-attachment for %s" % message_id, 2)
         #  continue
         if row[0] == 'invalid':
-          self.log("attachment already deleted. ignoring delete-attachment for %s" % message_id, 4)
+          self.log(self.logger.DEBUG, 'attachment already deleted. ignoring delete-attachment for %s' % message_id)
           continue
-        self.log("deleting attachments for message_id %s" % message_id, 2)
+        self.log(self.logger.INFO, 'deleting attachments for message_id %s' % message_id)
         if row[3] not in self.regenerate_boards:
           self.regenerate_boards.append(row[3])
         if row[2] == '':
           if not message_id in self.regenerate_threads:
             self.regenerate_threads.append(message_id)
-        else:
-          if not row[2] in self.regenerate_threads:
-            self.regenerate_threads.append(row[2])
-        if len(row[0]) > 0 and row[0] != "invalid":
-          self.log("deleting attachment for message_id %s: img/%s" % (message_id, row[0]), 4)
+        elif not row[2] in self.regenerate_threads:
+          self.regenerate_threads.append(row[2])
+        if len(row[0]) > 0:
+          self.log(self.logger.INFO, 'deleting attachment for message_id %s: img/%s' % (message_id, row[0]))
           try:
             os.unlink(os.path.join(self.output_directory, "img", row[0]))
           except Exception as e:
-            self.log("could not delete attachment %s: %s" % (row[0], e), 1)
+            self.log(self.logger.WARNING, 'could not delete attachment %s: %s' % (row[0], e))
         if len(row[1]) > 0 and row[1] != "invalid":
-          self.log("deleting attachment for message_id %s: thumbs/%s" % (message_id, row[0]), 4)
+          self.log(self.logger.INFO, 'deleting attachment for message_id %s: thumbs/%s' % (message_id, row[1]))
           try:
             os.unlink(os.path.join(self.output_directory, "thumbs", row[1]))
           except Exception as e:
-            self.log("could not delete attachment %s: %s" % (row[1], e), 1)
+            self.log(self.logger.WARNING, 'could not delete attachment %s: %s' % (row[1], e))
         self.sqlite.execute('UPDATE articles SET imagelink = "invalid", thumblink = "invalid", imagename = "invalid", public_key = "" WHERE article_uid = ?', (message_id,))
         self.sqlite_conn.commit()
       elif line.lower().startswith("delete "):
         message_id = line.lower().split(" ")[1]
         if os.path.exists(os.path.join("articles", "restored", message_id)):
-          self.log("message has been restored: %s. ignoring delete" % message_id, 2)
+          self.log(self.logger.DEBUG, 'message has been restored: %s. ignoring delete' % message_id)
           continue
         row = self.sqlite.execute("SELECT imagelink, thumblink, parent, group_id, received FROM articles WHERE article_uid = ?", (message_id,)).fetchone()
         if not row:
-          self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 4)
+          self.log(self.logger.DEBUG, 'should delete message_id %s but there is no article matching this message_id' % message_id)
           continue
         #if row[4] > timestamp:
         #  self.log("post more recent than control message. ignoring delete for %s" % message_id, 2)
@@ -485,63 +446,57 @@ class main(threading.Thread):
         #if row[0] == 'invalid':
         #  self.log("message already deleted/censored. ignoring delete for %s" % message_id, 4)
         #  continue
-        self.log("deleting message_id %s" % message_id, 2)
+        self.log(self.logger.INFO, 'deleting message_id %s' % message_id)
         if row[3] not in self.regenerate_boards:
           self.regenerate_boards.append(row[3])
         if row[2] == '':
           # root post
           if int(self.sqlite.execute("SELECT count(article_uid) FROM articles WHERE parent = ?", (message_id,)).fetchone()[0]) > 0:
             # root posts with child posts
-            self.log("deleting message_id %s, got a root post with attached child posts" % message_id, 4)
+            self.log(self.logger.DEBUG, 'deleting message_id %s, got a root post with attached child posts' % message_id)
             root_posts.append(message_id)
             self.sqlite.execute('UPDATE articles SET imagelink = "invalid", thumblink = "invalid", imagename = "invalid", message = "this post has been deleted by some evil mod", sender = "deleted", email = "deleted", subject = "deleted", public_key = "" WHERE article_uid = ?', (message_id,))
             if message_id not in self.regenerate_threads:
               self.regenerate_threads.append(message_id)
           else:
             # root posts without child posts
-            self.log("deleting message_id %s, got a root post without any child posts" % message_id, 4)
+            self.log(self.logger.DEBUG, 'deleting message_id %s, got a root post without any child posts' % message_id)
             self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
             try:
               os.unlink(os.path.join(self.output_directory, "thread-%s.html" % sha1(message_id).hexdigest()[:10]))
             except Exception as e:
-              self.log("could not delete thread for message_id %s: %s" %(message_id, e), 1)
+              self.log(self.logger.WARNING, 'could not delete thread for message_id %s: %s' % (message_id, e))
         else:
           # child post
-          self.log("deleting message_id %s, got a child post" % message_id, 4)
+          self.log(self.logger.DEBUG, 'deleting message_id %s, got a child post' % message_id)
           self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
           if row[2] not in self.regenerate_threads:
             self.regenerate_threads.append(row[2])
           # FIXME: add detection for parent == deleted message (not just censored) and if true, add to root_posts 
         if len(row[0]) > 0 and row[0] != "invalid":
-          self.log("deleting message_id %s, has attachment %s" % (message_id, row[0]), 4)
+          self.log(self.logger.INFO, 'deleting message_id %s, attachment %s' % (message_id, row[0]))
           try:
             os.unlink(os.path.join(self.output_directory, "img", row[0]))
           except Exception as e:
-            self.log("could not delete attachment %s: %s" % (row[0], e), 1)
+            self.log(self.logger.WARNING, 'could not delete img/%s: %s' % (row[0], e))
         if len(row[1]) > 0 and row[1] != "invalid":
-          self.log("deleting message_id %s, has thumb %s" % (message_id, row[0]), 4)
+          self.log(self.logger.INFO, 'deleting message_id %s, thumb %s' % (message_id, row[1]))
           try:
             os.unlink(os.path.join(self.output_directory, "thumbs", row[1]))
           except Exception as e:
-            self.log("could not delete attachment %s: %s" % (row[1], e), 1)
+            self.log(self.logger.WARNING, 'could not delete thumbs/%s: %s' % (row[1], e))
         self.sqlite_conn.commit()
     for post in root_posts:
       if int(self.sqlite.execute("SELECT count(article_uid) FROM articles WHERE parent = ? and parent != article_uid", (message_id,)).fetchone()[0]) == 0:
-        self.log("deleting message_id %s, root_post has no more childs" % message_id, 2)
+        self.log(self.logger.DEBUG, 'deleting message_id %s, root_post has no more childs' % message_id)
         self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
         self.sqlite_conn.commit()
         try:
           os.unlink(os.path.join(self.output_directory, "thread-%s" % sha1(message_id).hexdigest()[:10]))
         except Exception as e:
-          self.log("could not delete thread for message_id %s: %s" % (message_id, e), 1)
+          self.log(self.logger.WARNING, 'could not delete thread for message_id %s: %s' % (message_id, e))
       else:
-        self.log("deleting message_id %s, root_post still has childs" % message_id, 3)
-
-  def log(self, message, debuglevel):
-    if self.debug >= debuglevel:
-      message = "{0}".format(message)
-      for line in message.split('\n'):
-        print "[{0}] {1}".format(self.name, line)
+        self.log(self.logger.DEBUG, 'deleting message_id %s, root_post still has childs' % message_id)
 
   def signal_handler(self, signum, frame):
     # FIXME use try: except: around open(), also check for duplicate here
@@ -565,7 +520,7 @@ class main(threading.Thread):
       return
     if  __name__ == '__main__':
       return
-    self.log("starting up as plugin..", 2)
+    self.log(self.logger.INFO, 'starting up as plugin..')
     self.past_init()
     self.running = True
     regen_overview = False
@@ -576,17 +531,18 @@ class main(threading.Thread):
         if ret[0] == "article":
           message_id = ret[1]
           if self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ? AND imagelink != "invalid"', (message_id,)).fetchone():
-            self.log("run: {0} already in database..".format(message_id), 4)
+            self.log(self.logger.DEBUG, '%s already in database..' % message_id)
             continue
           #message_id = self.queue.get(block=True, timeout=1)
-          self.log("got article %s" % message_id, 5)
+          self.log(self.logger.DEBUG, 'got article %s' % message_id)
           try:
             f = open(os.path.join('articles', message_id), 'r')
             if not self.parse_message(message_id, f):
               f.close()
-              self.log("got article %s, parse_message failed. somehow." % message_id, 5)
+              #self.log(self.logger.WARNING, 'got article %s, parse_message failed. somehow.' % message_id)
           except Exception as e:
-            self.log("something went wrong while trying to parse article: %s" % e, 0)
+            self.log(self.logger.WARNING, 'something went wrong while trying to parse article %s:' % message_id)
+            self.log(self.logger.WARNING, traceback.format_exc())
             try:
               f.close()
             except:
@@ -595,14 +551,15 @@ class main(threading.Thread):
           got_control = True
           self.handle_control(ret[1], ret[2])
         else:
-          self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
+          self.log(self.logger.ERROR, 'found article with unknown source: %s' % ret[0])
 
         if self.queue.qsize() > self.sleep_threshold:
           time.sleep(self.sleep_time)
       except Queue.Empty as e:
         if len(self.regenerate_boards) > 0:
           do_sleep = len(self.regenerate_boards) > self.sleep_threshold
-          if do_sleep: self.log('boards: should sleep', 0)
+          if do_sleep:
+            self.log(self.logger.DEBUG, 'boards: should sleep')
           for board in self.regenerate_boards:
             self.generate_board(board)
             if do_sleep: time.sleep(self.sleep_time)
@@ -610,7 +567,8 @@ class main(threading.Thread):
           regen_overview = True
         if len(self.regenerate_threads) > 0:
           do_sleep = len(self.regenerate_threads) > self.sleep_threshold
-          if do_sleep: self.log('threads: should sleep', 0)
+          if do_sleep:
+            self.log(self.logger.DEBUG, 'threads: should sleep')
           for thread in self.regenerate_threads:
             self.generate_thread(thread)
             if do_sleep: time.sleep(self.sleep_time)
@@ -626,7 +584,7 @@ class main(threading.Thread):
           got_control = False
     self.sqlite_conn.close()
     self.sqlite_hasher_conn.close()
-    self.log('bye', 2)
+    self.log(self.logger.INFO, 'bye')
 
   def basicHTMLencode(self, inputString):
     return inputString.replace('<', '&lt;').replace('>', '&gt;')
@@ -674,7 +632,7 @@ class main(threading.Thread):
     return '<div class="code">%s</div>' % rematch.group(1)
 
   def parse_message(self, message_id, fd):
-    self.log('new message: {0}'.format(message_id), 2)
+    self.log(self.logger.INFO, 'new message: %s' % message_id)
     hash_message_uid = sha1(message_id).hexdigest()
     identifier = hash_message_uid[:10]
     subject = 'None'
@@ -737,12 +695,13 @@ class main(threading.Thread):
       line = fd.readline()
 
     if not header_found:
-      self.log("{0} malformed article".format(message_id), 2)
-      return False
+      #self.log(self.logger.WARNING, '%s malformed article' % message_id)
+      #return False
+      raise Exception('%s malformed article' % message_id)
     if signature:
       if public_key != '':
-        self.log("got signature with length %i and content '%s'" % (len(signature), signature), 3)
-        self.log("got public_key with length %i and content '%s'" % (len(public_key), public_key), 3)
+        self.log(self.logger.DEBUG, 'got signature with length %i and content \'%s\'' % (len(signature), signature))
+        self.log(self.logger.DEBUG, 'got public_key with length %i and content \'%s\'' % (len(public_key), public_key))
         if not (len(signature) == 128 and len(public_key) == 64):
           public_key = ''
     group_ids = list()
@@ -753,14 +712,14 @@ class main(threading.Thread):
           self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
           self.sqlite_conn.commit()
         except:
-          self.log('ignoring message for blocked group %s' % group, 2)
+          self.log(self.logger.INFO, 'ignoring message for blocked group %s' % group)
           continue
         self.regenerate_all_html()
         group_ids.append(int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=?', (group,)).fetchone()[0]))
       else:
         group_ids.append(int(result[0]))
     if len(group_ids) == 0:
-      self.log('no groups left which are not blocked. ignoring %s' % message_id, 2)
+      self.log(self.logger.DEBUG, 'no groups left which are not blocked. ignoring %s' % message_id)
       return False
     for group_id in group_ids:
       if group_id not in self.regenerate_boards:
@@ -778,7 +737,7 @@ class main(threading.Thread):
             self.sqlite.execute('UPDATE articles SET last_update=? WHERE article_uid=?', (sent, parent))
             self.sqlite_conn.commit()
         else:
-          self.log('error: missing parent {0} for post {1}'.format(parent, message_id), 1)
+          self.log(self.logger.INFO, 'missing parent %s for post %s' %  (parent, message_id))
           if parent in self.missing_parents:
             if sent > self.missing_parents[parent]:
               self.missing_parents[parent] = sent
@@ -795,9 +754,9 @@ class main(threading.Thread):
         else:
           last_update = sent
         del self.missing_parents[message_id]
-        self.log('found a missing parent: {0}'.format(message_id), 1)
+        self.log(self.logger.INFO, 'found a missing parent: %s' % message_id)
         if len(self.missing_parents) > 0:
-          self.log('still missing {0} parents'.format(len(self.missing_parents)), 1)
+          self.log(self.logger.INFO, 'still missing %i parents' % len(self.missing_parents))
       if message_id not in self.regenerate_threads:
         self.regenerate_threads.append(message_id)
 
@@ -813,12 +772,12 @@ class main(threading.Thread):
       hasher.update(oldline.replace("\r\n", ""))
       fd.seek(bodyoffset)
       try:
-        self.log("trying to validate signature.. ", 2)
+        self.log(self.logger.INFO, 'trying to validate signature.. ')
         nacl.signing.VerifyKey(unhexlify(public_key)).verify(hasher.digest(), unhexlify(signature))
-        self.log("validated", 2)
+        self.log(self.logger.INFO, 'validated')
       except Exception as e:
         public_key = ''
-        self.log("failed: %s" % e, 2)
+        self.log(self.logger.INFO, 'failed: %s' % e)
       del hasher
       del signature
     parser.feed(fd.read())
@@ -831,11 +790,11 @@ class main(threading.Thread):
     message = ''
     # TODO: check if out dir is remote fs, use os.rename if not
     if result.is_multipart():
-      self.log('message is multipart, length: %i' % len(result.get_payload()), 3)
+      self.log(self.logger.DEBUG, 'message is multipart, length: %i' % len(result.get_payload()))
       if len(result.get_payload()) == 1 and result.get_payload()[0].get_content_type() == "multipart/mixed":
         result = result.get_payload()[0]
       for part in result.get_payload():
-        self.log('got part == %s' % part.get_content_type(), 3)
+        self.log(self.logger.DEBUG, 'got part == %s' % part.get_content_type())
         if part.get_content_type().startswith('image/'):
           tmp_link = os.path.join(self.temp_directory, 'tmpImage')
           f = open(tmp_link, 'w')
@@ -881,7 +840,7 @@ class main(threading.Thread):
               #  modifier = float(200) / thumb.size[1]
               x = int(thumb.size[0] * modifier)
               y = int(thumb.size[1] * modifier)
-              self.log("old image size: {0}x{1}, new image size: {2}x{3}".format(thumb.size[0], thumb.size[1], x, y), 3)
+              self.log(self.logger.DEBUG, 'old image size: %ix%i, new image size: %ix%i' %  (thumb.size[0], thumb.size[1], x, y))
               if thumb.mode == 'RGBA' or thumb.mode == 'LA':
                 thumb_name = imagehash + '.png'
               else:
@@ -937,7 +896,7 @@ class main(threading.Thread):
     message = self.basicHTMLencode(message)
     if self.sqlite.execute('SELECT article_uid FROM articles WHERE article_uid=?', (message_id,)).fetchone():
       # post has been censored and is now being restored. just delete post for all groups so it can be reinserted
-      self.log('post has been censored and is now being restored: %s' % message_id, 2) 
+      self.log(self.logger.INFO, 'post has been censored and is now being restored: %s' % message_id) 
       self.sqlite.execute('DELETE FROM articles WHERE article_uid=?', (message_id,))
       self.sqlite_conn.commit()
     for group_id in group_ids:
@@ -976,7 +935,7 @@ class main(threading.Thread):
       t_engine_mapper_root = dict() 
       root_message_id_hash = sha1(root_row[0]).hexdigest()
       if thread_counter == 10:
-        self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name_unquoted, page_counter), 2)
+        self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
         t_engine_mapper_board = dict()
         t_engine_mapper_board['threads'] = ''.join(threads)
         pagelist = list()
@@ -1103,7 +1062,7 @@ class main(threading.Thread):
       )
       del childs
     if thread_counter > 0 or (page_counter == 1 and thread_counter == 0):
-      self.log("generating {0}/{1}-{2}.html".format(self.output_directory, board_name_unquoted, page_counter), 2)
+      self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
       t_engine_mapper_board = dict()
       t_engine_mapper_board['threads'] = ''.join(threads)
       pagelist = list()
@@ -1134,20 +1093,20 @@ class main(threading.Thread):
       # FIXME: create temporary root post here? this will never get called on startup because it checks for root posts only
       # FIXME: ^ alternatives: wasted threads in admin panel? red border around images in pic log? actually adding temporary root post while processing?
       #root_row = (root_uid, 'none', 'root post not yet available', 0, 'root post not yet available', '', '', 0, '')
-      self.log('error: root post not yet available: {0}, creating temporary root post'.format(root_uid), 1)
+      self.log(self.logger.INFO, 'root post not yet available: %s, should create temporary root post here' % root_uid)
       return
 
     if self.sqlite.execute('SELECT group_id FROM groups WHERE group_id = ? AND blocked = 1', (root_row[8],)).fetchone():
       path = os.path.join(self.output_directory, 'thread-%s.html' % root_message_id_hash[:10])
       if os.path.isfile(path):
-        self.log('this thread belongs to some blocked board. deleting %s.' % path, 2)
+        self.log(self.logger.INFO, 'this thread belongs to some blocked board. deleting %s.' % path)
         try:
           os.unlink(path)
         except Exception as e:
-          self.log('ERROR: could not delete %s: %s' % (path, e), 0)
+          self.log(self.logger.ERROR, 'could not delete %s: %s' % (path, e))
       return
 
-    self.log("generating {0}/thread-{1}.html".format(self.output_directory, root_message_id_hash[:10]), 2)
+    self.log(self.logger.INFO, 'generating %s/thread-%s.html' % (self.output_directory, root_message_id_hash[:10]))
     if root_row[6] != '':
       root_imagelink = root_row[6]
       if root_row[7] == 'invalid':
@@ -1252,7 +1211,7 @@ class main(threading.Thread):
     #del boardlist
     
   def generate_overview(self):
-    self.log("generating {0}/overview.html".format(self.output_directory), 2)
+    self.log(self.logger.INFO, 'generating %s/overview.html' % self.output_directory)
     t_engine_mappings_overview = dict()
     boardlist = list()
     news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'

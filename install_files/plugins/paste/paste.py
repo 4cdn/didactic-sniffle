@@ -11,6 +11,7 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import guess_lexer, guess_lexer_for_filename, get_lexer_by_name, ClassNotFound
 import codecs
+import traceback
 
 if __name__ == '__main__':
   import signal
@@ -22,12 +23,27 @@ else:
   #from pygments.lexers._lassobuiltins import BUILTINS
 
 class main(threading.Thread):
+  
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log(self.name, message, loglevel)
 
-  def __init__(self, thread_name, args):
+  def die(self, message):
+    self.log(self.logger.CRITICAL, message)
+    self.log(self.logger.CRITICAL, 'terminating..')
+    self.should_terminate = True
+    if __name__ == '__main__':
+      exit(1)
+    else:
+      raise Exception(message)
+      return
+
+  def __init__(self, thread_name, logger, args):
     threading.Thread.__init__(self)
     self.name = thread_name
+    self.logger = logger
     self.should_terminate = False
-    self.debug = 5
+    self.loglevel = self.logger.INFO
     # TODO: move sleep stuff to config table    
     self.sleep_threshold = 10
     self.sleep_time = 0.02
@@ -36,16 +52,7 @@ class main(threading.Thread):
       if not arg in args:
         error += '%s not in arguments\n' % arg
     if error != '':
-      error = error.rstrip("\n")
-      for line in error.split("\n"):
-        self.log('error: %s' % line, 0)
-      self.log('terminating', 0)
-      self.should_terminate = True
-      if __name__ == '__main__':
-        exit(1)
-      else:
-        raise Exception(error)
-        return
+      self.die(error.rstrip('\n'))
     self.outputDirectory = args['output_directory']
     self.database_directory = args['database_directory']
     self.templateDirectory = args['template_directory']
@@ -56,31 +63,22 @@ class main(threading.Thread):
       if args['sync_on_startup'].lower() == 'true':
         self.sync_on_startup = True
     if not os.path.exists(self.templateDirectory):
-      self.log("error: template directory '{0}' does not exist".format(self.templateDirectory), 0)
-      self.log("terminating", 0)
-      self.should_terminate = True
-      return
+      self.die('template directory \'%s\' does not exist' % self.templateDirectory)
     if not os.path.exists(os.path.join(self.templateDirectory, self.css_file)):
-      self.log("error: specified CSS file not found in template directory: '{0}' does not exist.".format(os.path.join(self.templateDirectory, self.css_file)), 0)
-      self.log("terminating", 0)
-      self.should_terminate = True
-      return
+      self.die('specified CSS file not found in template directory: \'%s\' does not exist' % os.path.join(self.templateDirectory, self.css_file))
 
     if __name__ == '__main__':
-      self.log("initializing as standalone application..", 2)
+      self.log(self.logger.INFO, 'initializing as standalone application..')
       if 'watch_directory' not in args:
-        self.log("error: called without watch_directory and thus should receive articles via .add_article() but this class runs as own application.", 0)
-        self.log("terminating", 0)
-        exit(1)
+        self.die('called without watch_directory and thus should receive articles via .add_article() but this class runs as own application')
       self.watching = args['watch_directory']
-      self.log("creating directory watcher..", 2)
+      self.log(self.logger.INFO, 'creating directory watcher..')
       signal.signal(signal.SIGIO, self.handle_new)
       try:
         fd = os.open(self.watching, os.O_RDONLY)
       except OSError as e:
         if e.errno == 2:
-          self.log("{0}".format(e), 0)
-          exit(1)
+          self.die(e)
         else:
           raise e
       fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
@@ -94,12 +92,10 @@ class main(threading.Thread):
                     (article_uid text, hash text PRIMARY KEY, sender text, email text, subject text, sent INTEGER, body text, root text, received INTEGER)''')
       self.sqlite_conn.commit()
     else:
-      self.log("initializing as plugin..", 2)
+      self.log(self.logger.INFO, 'initializing as plugin..')
       if 'watch_directory' in args:
-        self.log("error: called with watch_directory and thus should watch a directory for changes but this class does not run as own application.", 0)
-        self.log("terminating", 0)
-        self.should_terminate = True
-        return
+        self.die('called with watch_directory and thus should watch a directory for changes but this class does not run as own application')
+
       self.queue = Queue.Queue()
       # needed for working inside a chroot to recognize latin1 charset
       try:
@@ -107,19 +103,18 @@ class main(threading.Thread):
       except ClassNotFound as e:
         pass
     if 'debug' not in args:
-      self.debug = 2
-      self.log('debuglevel not defined, using default of debug = 2', 2)
+      self.log(self.logger.INFO, 'debuglevel not defined, using default of debug = %i' % self.logger.INFO)
     else:
       try:
-        self.debug = int(args['debug'])
-        if self.debug < 0 or self.debug > 5:
-          self.debug = 2
-          self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+        self.loglevel = int(args['debug'])
+        if self.loglevel < 0 or self.loglevel > 5:
+          self.loglevel = self.logger.INFO
+          self.log(self.logger.WARNING, 'debuglevel not between 0 and 5, using default of debug = %i' % self.logger.INFO)
         else:
-          self.log('using debuglevel {0}'.format(self.debug), 3)
+          self.log(self.logger.DEBUG, 'using debuglevel %i' % self.loglevel)
       except ValueError as e:
-        self.debug = 2
-        self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+        self.loglevel = self.logger.INFO
+        self.log(self.logger.WARNING, 'debuglevel not between 0 and 5, using default of debug = %i' % self.logger.INFO)
     if 'generate_all' in args:
       if args['generate_all'].lower() == 'true': 
         self.generate_full_html_on_start = True
@@ -154,10 +149,6 @@ class main(threading.Thread):
   def shutdown(self):
     self.running = False
 
-  def log(self, message, debuglevel):
-    if self.debug >= debuglevel:
-      print "[{0}] {1}".format(self.name, message)
-
   def run(self):
     if self.should_terminate:
       self.shutdown()
@@ -180,9 +171,9 @@ class main(threading.Thread):
     self.sqlite_conn.commit()
     self.running = True
     self.regenerate_index = False
-    self.log("starting up as plugin..", 2)
+    self.log(self.logger.INFO, 'starting up as plugin..')
     if self.generate_full_html_on_start:
-      self.log("regenerating all HTML files..", 2)
+      self.log(self.logger.INFO, 'regenerating all HTML files..')
       for row in self.sqlite.execute('SELECT hash, sender, subject, sent, body FROM pastes ORDER BY sent ASC').fetchall():
         self.generate_paste(row[0][:10], row[4], row[2], row[1], row[3])
       self.recreate_index()
@@ -193,20 +184,21 @@ class main(threading.Thread):
         if ret[0] == "article":
           message_id = ret[1]
           if self.sqlite.execute('SELECT hash FROM pastes WHERE article_uid = ?', (message_id,)).fetchone():
-            self.log("run: %s already in database.." % message_id, 4)
+            self.log(self.logger.DEBUG, '%s already in database..' % message_id)
             continue
           try:
             f = open(os.path.join('articles', message_id), 'r')
             message_content = f.readlines()
             f.close()
             if len(message_content) == 0:
-              self.log("empty NNTP message '{0}'. wtf?".format(message_id), 1)
+              self.log(self.logger.ERROR, 'empty NNTP message \'%s\'. wtf?' % message_id)
               continue
             if not self.parse_message(message_id, message_content):
               continue
             self.regenerate_index = True
           except Exception as e:
-            self.log("something went wrong while parsing new article: %s" % e, 0)
+            self.log(self.logger.WARNING, 'something went wrong while parsing new article %s:' % message_id)
+            self.log(self.logger.WARNING, traceback.format_exc())
             try:
               f.close()
             except:
@@ -215,7 +207,7 @@ class main(threading.Thread):
           got_control = True
           self.handle_control(ret[1], ret[2])
         else:
-          self.log("WARNING: found article with unknown source: %s" % ret[0], 0)
+          self.log(self.logger.WARNING, 'got article with unknown source: %s' % ret[0])
         if self.queue.qsize() > self.sleep_threshold:
           time.sleep(self.sleep_time)
       except Queue.Empty as e:
@@ -229,16 +221,18 @@ class main(threading.Thread):
           self.recreate_index()
           self.regenerate_index = False
     self.sqlite_conn.close()
-    self.log("bye", 2)
+    self.log(self.logger.INFO, 'bye')
 
   def basicHTMLencode(self, input):
     return input.replace('<', '&lt;').replace('>', '&gt;')
 
   def generate_paste(self, identifier, paste_content, subject, sender, sent):
+    self.log(self.logger.INFO, 'new paste: %s' % subject)
+    self.log(self.logger.INFO, 'generating %s' % os.path.join(self.outputDirectory, identifier + '.txt'))
     f = codecs.open(os.path.join(self.outputDirectory, identifier + '.txt'), 'w', encoding='utf-8')
     f.write(paste_content)
     f.close()
-    self.log("new paste: {0}".format(subject), 2)
+    self.log(self.logger.INFO, 'generating %s' % os.path.join(self.outputDirectory, identifier + '.html'))
     found = False
     try:
       if '.' in subject:
@@ -265,10 +259,10 @@ class main(threading.Thread):
         else:
           lexer = get_lexer_by_name('text', encoding='utf-8')
     except ClassNotFound as e:
-      self.log("{0}: {1}".format(subject, e), 0)
+      self.log(self.logger.WARNING, '%s: %s' % (subject, e))
       lexer = get_lexer_by_name('text', encoding='utf-8')
     except ImportError as e:
-      self.log("{0}: {1}".format(subject, e), 0)
+      self.log(self.logger.WARNING, '%s: %s' % (subject, e))
       lexer = get_lexer_by_name('text', encoding='utf-8')
     result = highlight(paste_content, lexer, self.formatter).decode('utf-8')
     template = self.template_single_paste.replace('%%paste_title%%', subject)
@@ -278,6 +272,7 @@ class main(threading.Thread):
     template = template.replace('%%identifier%%', identifier)
     template = template.replace('%%paste%%', result)
     f = codecs.open(os.path.join(self.outputDirectory, identifier + '.html'), 'w', encoding='utf-8')
+    #f = open(os.path.join(self.outputDirectory, identifier + '.html'), 'w')
     f.write(template)
     f.close()
     del result, template
@@ -317,7 +312,7 @@ class main(threading.Thread):
     return True
 
   def recreate_index(self):
-    self.log("rewriting index: {0}..".format(os.path.join(self.outputDirectory, 'index.html')), 3)
+    self.log(self.logger.INFO, 'generating %s' % os.path.join(self.outputDirectory, 'index.html'))
     paste_recent = list()
     for row in self.sqlite.execute('SELECT hash, subject, sender, sent FROM pastes ORDER by sent DESC').fetchall():
       paste_recent.append('<tr><td><a href="{0}.html">{1}</a></td><td>{2}</td><td>{3}</td></tr>\n'.format(row[0][:10], row[1].encode('UTF-8'), row[2].encode('UTF-8'), datetime.utcfromtimestamp(row[3]).strftime('%Y/%m/%d %H:%M UTC')))
@@ -330,28 +325,31 @@ class main(threading.Thread):
     f.close()
 
   def handle_control(self, lines, timestamp):
-    self.log("got control message: %s" % lines, 5)
+    self.log(self.logger.DEBUG, 'got control message: %s' % lines)
     for line in lines.split("\n"):
       if line.lower().startswith("delete "):
         message_id = line.lower().split(" ")[1]
         if os.path.exists(os.path.join("articles", "restored", message_id)):
-          self.log("message has been restored: %s. ignoring delete" % message_id, 2)
+          self.log(self.logger.DEBUG, 'message has been restored: %s. ignoring delete' % message_id)
           continue
         if not self.sqlite.execute('SELECT count(article_uid) FROM pastes WHERE article_uid = ?', (message_id,)).fetchone()[0]:
-          self.log("should delete message_id %s but there is no article matching this message_id" % message_id, 4)
+          self.log(self.logger.DEBUG, 'should delete message_id %s but there is no article matching this message_id' % message_id)
           continue
-        self.log("deleting message_id %s" % message_id, 2)
+        self.log(self.logger.INFO, 'deleting message_id %s' % message_id)
         try: self.sqlite.execute('DELETE FROM pastes WHERE article_uid = ?', (message_id,))
         except Exception as e:
-          self.log("could not delete database entry for message_id %s: %s" %(message_id, e), 1)
-        try: os.unlink(os.path.join(self.outputDirectory, "%s.html" % sha1(message_id).hexdigest()[:10]))
+          self.log(self.logger.ERROR, 'could not delete database entry for message_id %s: %s' % (message_id, e))
+        try:
+          self.log(self.logger.INFO, 'deleting %s.html..' % sha1(message_id).hexdigest()[:10])
+          os.unlink(os.path.join(self.outputDirectory, "%s.html" % sha1(message_id).hexdigest()[:10]))
         except Exception as e:
-          self.log("could not delete paste for message_id %s: %s" %(message_id, e), 1)
+          self.log(self.logger.WARNING, 'could not delete paste for message_id %s: %s' % (message_id, e))
         self.sqlite_conn.commit()
       else:
-        self.log("unknown control message: %s" % line, 0)
+        self.log(self.logger.WARNING, 'unknown control message: %s' % line)
 
   def handle_new(self, signum, frame):
+    # only standalone
     # FIXME use try: except around open(), also check for duplicate here
     if self.busy:
       self.retry = True
@@ -363,7 +361,7 @@ class main(threading.Thread):
       message_content = f.readlines()
       f.close()
       if len(message_content) == 0:
-        self.log("empty NNTP message '{0}'. wtf?".format(message_id), 1)
+        self.log(self.logger.WARNING, 'empty NNTP message \'%s\'. wtf?' % message_id)
         os.remove(os.path.join(self.watching, message_id))
         continue
       if not self.parse_message(message_id, message_content):

@@ -19,6 +19,7 @@ import nacl.signing
 import re
 import Image, ImageDraw, ImageFilter, ImageFont
 import cStringIO
+import traceback
 if __name__ == '__main__':
   import nntplib
 
@@ -42,7 +43,8 @@ class postman(BaseHTTPRequestHandler):
           cookie = item
       cookie = cookie.strip().split('=', 1)[1]
       if cookie in self.origin.spammers:
-        self.origin.log('POST recognized an earlier spammer! %s' % cookie, 0)
+        self.origin.log(self.origin.logger.WARNING, 'POST recognized an earlier spammer! %s' % cookie)
+        self.origin.log(self.origin.logger.WARNING, self.headers)
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -68,7 +70,8 @@ class postman(BaseHTTPRequestHandler):
     if self.path == '/incoming/verify':
       self.handleVerify()
       return
-    self.origin.log("illegal access: {0}".format(self.path), 2)
+    self.origin.log(self.origin.logger.WARNING, "illegal POST access: %s" % self.path)
+    self.origin.log(self.origin.logger.WARNING, self.headers)
     self.send_response(200)
     self.send_header('Content-type', 'text/plain')
     self.end_headers()
@@ -83,7 +86,7 @@ class postman(BaseHTTPRequestHandler):
           cookie = item
       cookie = cookie.strip().split('=', 1)[1]
       if cookie in self.origin.spammers:
-        self.origin.log('GET recognized an earlier spammer! %s' % cookie, 0)
+        self.origin.log(self.origin.logger.WARNING, 'GET recognized an earlier spammer trying to access %s! %s' % (self.path, cookie))
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -98,7 +101,8 @@ class postman(BaseHTTPRequestHandler):
     if self.path == '/incoming/verify':
       self.send_captcha()
       return
-    self.origin.log("illegal access: {0}".format(self.path), 2)
+    self.origin.log(self.origin.logger.WARNING, "illegal GET access: %s" % self.path)
+    self.origin.log(self.origin.logger.WARNING, self.headers)
     self.send_response(200)
     self.send_header('Content-type', 'text/plain')
     self.end_headers()
@@ -111,7 +115,8 @@ class postman(BaseHTTPRequestHandler):
     self.wfile.write(errormessage)
 
   def die(self, message=''):
-    self.origin.log("{0}:{1} wants to fuck around: {2}".format(self.client_address[0], self.client_address[1], message), 1)
+    self.origin.log(self.origin.logger.WARNING, "%s:%i wants to fuck around, %s" % (self.client_address[0], self.client_address[1], message))
+    self.origin.log(self.origin.logger.WARNING, self.headers)
     if self.origin.reject_debug:
       self.send_error('don\'t fuck around here mkay\n{0}'.format(message))
     else:
@@ -207,7 +212,7 @@ class postman(BaseHTTPRequestHandler):
     if frontend == 'overchan' and reply != '':
       # FIXME add ^ allow_reply_bypass to frontend configuration
       if self.origin.captcha_bypass_after_timestamp_reply < int(time.time()):
-        self.origin.log('bypassing captcha for reply', 2)
+        self.origin.log(self.origin.logger.INFO, 'bypassing captcha for reply')
         self.handleNewArticle(post_vars) 
         return
     board = post_vars.getvalue('board', '').replace('"', '&quot;')
@@ -241,7 +246,7 @@ class postman(BaseHTTPRequestHandler):
       identifier = sha256()
       identifier.update(frontend + board + reply + target + name + email + subject)
       identifier.update(comment)
-      self.origin.log('failed capture try for %s' % identifier.hexdigest(), 1)
+      self.origin.log(self.origin.logger.INFO, 'failed capture try for %s' % identifier.hexdigest())
     passphrase = ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
     #passphrase += ' ' + ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
     b64 = self.origin.captcha_render_b64(passphrase, self.origin.captcha_tiles, self.origin.captcha_font, self.origin.captcha_filter)
@@ -309,7 +314,7 @@ class postman(BaseHTTPRequestHandler):
       self.die('frontend not in post_vars')
       return
     frontend = post_vars['frontend'].value
-    self.origin.log("got incoming article from {0}:{1} for frontend '{2}'".format(self.client_address[0], self.client_address[1], frontend), 2)
+    self.origin.log(self.origin.logger.INFO, "got incoming article from %s:%i for frontend '%s'" % (self.client_address[0], self.client_address[1], frontend))
     if not 'target' in post_vars:
       self.die('target not in post_vars')
       return
@@ -387,7 +392,7 @@ class postman(BaseHTTPRequestHandler):
               keypair = nacl.signing.SigningKey(name[-64:], encoder=nacl.encoding.HexEncoder)
               signature = True
             except Exception as e:
-              self.origin.log("can't create keypair: %s" % e, 2)
+              self.origin.log(self.origin.logger.INFO, "can't create keypair from user supplied secret key: %s" % e)
             name = name[:-65]
           else:
             parts = name.split('#', 1)
@@ -408,7 +413,7 @@ class postman(BaseHTTPRequestHandler):
                 signature = True
               except Exception as e:
                 # FIXME remove "secret" trip? disable signature?
-                self.origin.log("can't create keypair: %s" % e, 2)
+                self.origin.log(self.origin.logger.INFO, "can't create keypair from user supplied short trip: %s" % e)
             del parts
           if name == '':
             name = self.origin.frontends[frontend]['defaults']['name']
@@ -499,20 +504,20 @@ class postman(BaseHTTPRequestHandler):
     try:
       if len(comment) > 40 and self.origin.spamprot_base64.match(comment):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
-        self.origin.log("caught some new base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
-        #print self.headers
+        self.origin.log(self.origin.logger.WARNING, "caught some new base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid))
+        self.origin.log(self.origin.logger.WARNING, self.headers)
         #if self.origin.fake_ok:
         self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       elif len(subject) > 80 and self.origin.spamprot_base64.match(subject):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
-        self.origin.log("caught some new large subject spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
-        print self.headers
+        self.origin.log(self.origin.logger.WARNING, "caught some new large subject spam for frontend %s: incoming/spam/%s" % (frontend, message_uid))
+        self.origin.log(self.origin.logger.WARNING, self.headers)
         #if self.origin.fake_ok:
         self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       elif len(name) > 80 and self.origin.spamprot_base64.match(name):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
-        self.origin.log("caught some new large name spam for frontend %s: incoming/spam/%s" % (frontend, message_uid), 0)
-        print self.headers
+        self.origin.log(self.origin.logger.WARNING, "caught some new large name spam for frontend %s: incoming/spam/%s" % (frontend, message_uid))
+        self.origin.log(self.origin.logger.WARNING, self.headers)
         #if self.origin.fake_ok:
         self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
       else:
@@ -521,51 +526,58 @@ class postman(BaseHTTPRequestHandler):
         self.exit_ok(redirect_duration, redirect_target)
     except socket.error as e:
       if e.errno == 32:
-        self.origin.log(e, 2)
+        self.origin.log(self.origin.logger.DEBUG, 'broken pipe: %s' % e)
         # Broken pipe
         pass
       else:
-        raise e
+        self.origin.log(self.origin.logger.WARNING, 'unhandled exception while processing new post: %s' % e)
+        self.origin.log(self.origin.logger.WARNING, traceback.format_exc())
 
 class main(threading.Thread):
+  
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log(self.name, message, loglevel)
 
-  def __init__(self, thread_name, args):
+  def __init__(self, thread_name, logger, args):
     threading.Thread.__init__(self)
     self.name = thread_name
+    self.logger = logger
+    self.serving = False
     self.sync_on_startup = False
     if 'debug' not in args:
-      self.debug = 2
-      self.log('debuglevel not defined, using default of debug = 2', 2)
+      self.loglevel = self.logger.INFO
+      self.log(self.logger.DEBUG, 'debuglevel not defined, using default of debug = %i' % self.loglevel)
     else:
       try:
-        self.debug = int(args['debug'])
-        if self.debug < 0 or self.debug > 5:
-          self.debug = 2
-          self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+        self.loglevel = int(args['debug'])
+        if self.loglevel < 0 or self.loglevel > 5:
+          self.loglevel = self.logger.INFO
+          self.log(self.logger.WARNING, 'debuglevel not between 0 and 5, using default of debug = %i' % self.loglevel)
         else:
-          self.log('using debuglevel {0}'.format(self.debug), 3)
+          self.log(self.logger.DEBUG, 'using debuglevel %i' % self.loglevel)
       except ValueError as e:
-        self.debug = 2
-        self.log('debuglevel not between 0 and 5, using default of debug = 2', 2)
+        self.loglevel = self.logger.INFO
+        self.log(self.logger.WARNING, 'debuglevel not between 0 and 5, using default of debug = %i' % self.loglevel)
     if __name__ != '__main__':
-      self.log('initializing as plugin..', 2)
+      self.log(self.logger.INFO, 'initializing as plugin..')
     else:
-      self.log('initializing as standalone application..', 2)
+      self.log(self.logger.INFO, 'initializing as standalone application..')
     self.should_terminate = False
     for key in ('bind_ip', 'bind_port', 'template_directory', 'frontend_directory'):
       if not key in args:
-        self.log('{0} not in args'.format(key), 0)
+        self.log(self.logger.CRITICAL, '%s not in args' % key)
         self.should_terminate = True
     if self.should_terminate:
-      self.log('terminating..'.format(key), 0)
+      self.log(self.logger.CRITICAL, 'terminating..')
       return
     self.ip = args['bind_ip']
     try:
       self.port = int(args['bind_port'])
     except ValueError as e:
-      self.log("{0} is not a valid bind_port", 0)
+      self.log(self.logger.CRITICAL, "%s is not a valid bind_port" % args['bind_port'])
       self.should_terminate = True
-      self.log('terminating..'.format(key), 0)
+      self.log(self.logger.CRITICAL, 'terminating..')
       return
     if 'bind_use_ipv6' in args:
       tmp = args['bind_use_ipv6']
@@ -574,12 +586,12 @@ class main(threading.Thread):
       elif tmp.lower() == 'false':
         self.ipv6 = False
       else:
-        self.log("{0} is not a valid value for bind_use_ipv6. only true and false allowed.", 0)
+        self.log(self.logger.CRITICAL, "%s is not a valid value for bind_use_ipv6. only true and false allowed." % tmp)
         self.should_terminate = True
-        self.log('terminating..'.format(key), 0)
+        self.log(self.logger.CRITICAL, 'terminating..')
         return
 
-    self.log('initializing httpserver..', 3)
+    self.log(self.logger.DEBUG, 'initializing httpserver..')
     self.httpd = HTTPServer((self.ip, self.port), postman)
     if os.path.exists('seed'):
       f = open('seed', 'r')
@@ -601,11 +613,12 @@ class main(threading.Thread):
       elif tmp.lower() == 'false':
         self.httpd.reject_debug = False
       else:
-        self.log("{0} is not a valid value for reject_debug. only true and false allowed. setting value to false.", 0)
+        self.log(self.logger.WARNING, "%s is not a valid value for reject_debug. only true and false allowed. setting value to false." % tmp)
     self.httpd.log = self.log
+    self.httpd.logger = self.logger
 
     # read templates
-    self.log('reading templates..', 3)
+    self.log(self.logger.DEBUG, 'reading templates..')
     template_directory = args['template_directory']
     f = open(os.path.join(template_directory, 'message_nopic.template'), 'r')
     self.httpd.template_message_nopic = f.read()
@@ -618,10 +631,11 @@ class main(threading.Thread):
     f.close()
 
     # read frontends
-    self.log('reading frontend configuration..', 3)
+    self.log(self.logger.DEBUG, 'reading frontend configuration..')
     frontend_directory = args['frontend_directory']
     if not os.path.isdir(frontend_directory):
-      self.log('error: {0} not a directory'.format(frontend_directory), 0)
+      self.log(self.logger.WARNING, '%s is not a directory' % frontend_directory)
+      # FIXME: die?
     self.httpd.frontends = dict()
     frontends = list()
     for frontend in os.listdir(frontend_directory):
@@ -654,7 +668,7 @@ class main(threading.Thread):
           self.httpd.frontends[frontend][root].append(line)
         elif this_is == 'dict':
           if not '=' in line:
-            self.log("error while parsing frontend '{0}': no = in '{1}' which was defined as dict.".format(frontend, line), 0)
+            self.log(self.logger.DEBUG, "error while parsing frontend '%s': no = in '%s' which was defined as dict." % (frontend, line))
             continue
           key = line.split('=', 1)[0]
           value = line.split('=', 1)[1]
@@ -674,15 +688,15 @@ class main(threading.Thread):
             error += '  {0} not in defaults section of frontend configuration file\n'.format(key)
       if error != '':
         del self.httpd.frontends[frontend]
-        self.log("removed frontend configuration for {0}:\n{1}".format(frontend, error[:-1]), 0)
+        self.log(self.logger.WARNING, "removed frontend configuration for %s:\n%s" % (frontend, error[:-1]))
       else:
         frontends.append(frontend)
 
     if len(frontends) > 0:
-      self.log('added {0} frontends: {1}'.format(len(frontends), ', '.join(frontends)), 2)
+      self.log(self.logger.INFO, 'added %i frontends: %s' % (len(frontends), ', '.join(frontends)))
     else:
-      self.log('no valid frontends found in {0}.'.format(frontend_directory), 0)
-      self.log('terminating..'.format(frontend_directory), 0)
+      self.log(self.logger.WARNING, 'no valid frontends found in %s.' % frontend_directory)
+      self.log(self.logger.WARNING, 'terminating..')
       self.should_terminate = True
       return
     self.httpd.spamprot_base64 = re.compile('^[a-zA-Z0-9]*$')
@@ -718,10 +732,13 @@ class main(threading.Thread):
     f.close() 
 
   def shutdown(self):
-    self.httpd.shutdown()
+    if self.serving:
+      self.httpd.shutdown()
+    else:
+      self.log(self.logger.INFO, 'bye')
 
   def add_article(self, message_id, source=None, timestamp=None):
-    self.log('WARNING, this plugin does not handle any article. remove hook parts from {0}'.format(os.path.join('config', 'plugins', self.name.split('-', 1)[1])), 0)
+    self.log(self.logger.WARNING, 'this plugin does not handle any article. remove hook parts from %s' % os.path.join('config', 'plugins', self.name.split('-', 1)[1]))
 
   def run(self):
     if self.should_terminate:
@@ -731,14 +748,10 @@ class main(threading.Thread):
     self.database_directory = ''
     self.httpd.sqlite_conn = sqlite3.connect(os.path.join(self.database_directory, 'hashes.db3'))
     self.httpd.sqlite = self.httpd.sqlite_conn.cursor()
-    self.log('start listening at http://{0}:{1}'.format(self.ip, self.port), 1)
+    self.log(self.logger.INFO, 'start listening at http://%s:%i' % (self.ip, self.port))
+    self.serving = True
     self.httpd.serve_forever()
-    self.log('bye', 2)
-
-  def log(self, message, debuglevel):
-    if self.debug >= debuglevel:
-      for line in "{0}".format(message).split('\n'):
-        print "[{0}] {1}".format(self.name, line)
+    self.log(self.logger.INFO, 'bye')
 
   def captcha_generate(self, text, secret, expires=120):
     expires = int(time.time()) + expires

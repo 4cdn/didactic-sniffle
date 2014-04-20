@@ -24,17 +24,17 @@ import traceback
 
 
 class feed(threading.Thread):
-  def __init__(self, master, connection=None, outstream=False, host=None, port=None, sync_on_startup=False, proxy=None, debug=2):
+  
+  def log(self, loglevel, message):
+    if loglevel >= self.loglevel:
+      self.logger.log(self.name, message, loglevel)
+  
+  def __init__(self, master, logger, connection=None, outstream=False, host=None, port=None, sync_on_startup=False, proxy=None, debug=2):
     threading.Thread.__init__(self)
-    # debug level
-    #     0: quiet
-    #     1: errors
-    #     2: warnings/connection info/article received/sent
-    #     3: in/out no multiline
-    #     4: in/out conaints multiline
-    #     5: info
     self.outstream = outstream
-    self.debug = debug
+    self.loglevel = debug
+    #self.logger = logger
+    self.logger = logger
     self.state = 'init'
     self.SRNd = master
     self.proxy = proxy
@@ -75,6 +75,7 @@ class feed(threading.Thread):
   def init_socket(self):
     if ':' in self.host:
       if self.proxy != None:
+        # FIXME: this should be loglevel.ERROR and then terminating itself
         raise Exception("can't use proxy server for ipv6 connections")
       self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
       return
@@ -90,6 +91,7 @@ class feed(threading.Thread):
       self.socket = sockssocket.socksocket(socket.AF_INET, socket.SOCK_STREAM)
       self.socket.setproxy(sockssocket.PROXY_TYPE_HTTP, self.proxy[1], self.proxy[2], rdns=True)
     else:
+      # FIXME: this should be loglevel.ERROR and then terminating itself
       raise Exception("unknown proxy type %s, must be one of socks5, socks4, http." % self.proxy[0])
 
   def add_article(self, message_id):
@@ -104,8 +106,8 @@ class feed(threading.Thread):
     sent = 0
     length = len(message)
     while sent != length:
-      if self.debug > 4 and sent > 0:
-        print "[{0}] resending part of line, starting at {1} to {2}".format(self.name, sent, length)
+      if sent > 0:
+        self.log(self.logger.DEBUG, 'resending part of line, starting at %i to %i' % (sent, length))
       try:
         sent += self.socket.send(message[sent:])
       except socket.error as e:
@@ -119,11 +121,10 @@ class feed(threading.Thread):
           self.con_broken = True
           break
         else:
-          print "ERROR: [%s] got an unknown socket error at line 102 with error number %i: %s" % (self.name, e.errno, e)
+          self.log(self.logger.ERROR, 'got an unknown socket error at line 124 with error number %i: %s' % (e.errno, e))
           self.con_broken = True
           break
-    if not self.multiline_out and self.debug > 2: print "[{0}] out: {1}".format(self.name, message[:-2])
-    if self.multiline_out and self.debug > 3: print "[{0}] out: {1}".format(self.name, message[:-2])
+    self.log(self.logger.VERBOSE, 'out: %s' % message[:-2])
 
   def shutdown(self):
     # FIXME socket.shutdown() needed if running == False?
@@ -139,8 +140,10 @@ class feed(threading.Thread):
     if self.cooldown_counter == 0:
       self.cooldown_counter += 1
       return
-    if self.debug > 1 and self.cooldown_counter != 10:
-      print "[%s] %ssleeping %s seconds" % (self.name, additional_message, self.cooldown_period * self.cooldown_counter)
+    if self.cooldown_counter == 10:
+      self.log(self.logger.DEBUG, '%ssleeping %s seconds' % (additional_message, self.cooldown_period * self.cooldown_counter))
+    else:
+      self.log(self.logger.INFO, '%ssleeping %s seconds' % (additional_message, self.cooldown_period * self.cooldown_counter))
     end_time = int(time.time()) + self.cooldown_period * self.cooldown_counter
     while self.running and int(time.time()) < end_time:
       time.sleep(2)
@@ -156,7 +159,10 @@ class feed(threading.Thread):
     self.multiline_out = False
     self.cooldown_period = 60
     self.cooldown_counter = 0
-    if self.outstream:
+    if not self.outstream:
+      self.log(self.logger.INFO, 'connection established')
+      self.send(self.welcome + '\r\n')
+    else:
       self.articles_to_send = list()
       while self.running and not connected:
         self.state = 'cooldown'
@@ -167,25 +173,24 @@ class feed(threading.Thread):
         try:
           self.socket.connect((self.host, self.port))
           connected = True
-          if self.debug > 1 and self.cooldown_counter != 10:
-            print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
+          #if self.cooldown_counter == 10:
+          #  self.log(self.logger.DEBUG, 'connection established via proxy %s' % str(self.proxy))
+          #else:
+          self.log(self.logger.INFO, 'connection established via proxy %s' % str(self.proxy))
         except socket.error as e:
           if e.errno == 106:
             # tunnelendpoint already connected. wtf? only happened via proxy
             # FIXME debug this
-            print "[%s] %s, setting connected = True" % (self.name, e)
+            self.log(self.logger.ERROR, '%s: setting connected = True' % e)
             connected = True
           elif e.errno == 9:
             # Bad file descriptor
             self.init_socket()
-          elif self.debug > 1:
-            print "[%s] connect socket.error: %s" % (self.name, e)
-            print traceback.format_exc()
+          else:
+            self.log(self.logger.ERROR, 'connect socket.error: %s' % e)
+            self.log(self.logger.ERROR, traceback.format_exc())
         except sockssocket.ProxyError as e:
-          if self.debug > 1: print "[%s] connect ProxyError: %s" % (self.name, e)
-    else:
-      if self.debug > 1: print "[%s] connection established" % self.name
-      self.send(self.welcome + '\r\n')
+          self.log(self.logger.ERROR, 'connect ProxyError: %s' % e)
     self.state = 'idle'
     poll = select.poll()
     poll.register(self.socket.fileno(), select.POLLIN | select.POLLPRI)
@@ -196,21 +201,21 @@ class feed(threading.Thread):
     while self.running:
       if self.con_broken:
         if not self.outstream:
-          print "[%s] not an outstream, terminating" % self.name
+          self.log(self.logger.INFO, 'not an outstream, terminating')
           break
         else:
           connected = False
           try:
             self.socket.shutdown(socket.SHUT_RDWR)
           except socket.error as e:
-            if self.debug > 4: print "[{0}] {1}".format(self.name, e)
+            #if self.debug > 4: print "[{0}] {1}".format(self.name, e)
             pass
           self.socket.close()
           self.init_socket()
           while self.running and not connected:
-            # FIXME creat def connect(), use self.vars for buffer, connected and poll
+            # TODO create def connect(), use self.vars for buffer, connected and poll
             if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
-              if self.debug > 1: print "[%s] connection broken. no article to send, sleeping" % self.name
+              self.log(self.logger.INFO, 'connection broken. no article to send, sleeping')
               self.state = 'nothing_to_send'
               while(self.running and self.queue.qsize() == 0):
                 time.sleep(2)
@@ -220,11 +225,13 @@ class feed(threading.Thread):
             if not self.running:
               break
             self.state = 'connecting'
-            if self.debug > 2: print "[%s] reconnecting.." % self.name
+            self.log(self.logger.INFO, 'reconnecting..')
             try:
               self.socket.connect((self.host, self.port))
-              if self.debug > 1 and self.cooldown_counter != 10:
-                print "[%s] connection established via proxy %s" % (self.name, str(self.proxy))
+              if self.cooldown_counter == 10:
+                self.log(self.logger.DEBUG, 'connection established via proxy %s' % str(self.proxy))
+              else:
+                self.log(self.logger.INFO, 'connection established via proxy %s' % str(self.proxy))
               connected = True
               self.con_broken = False
               poll = select.poll()
@@ -235,10 +242,11 @@ class feed(threading.Thread):
               self.reconnect = False
               self.state = 'idle'
             except socket.error as e:
-              if self.debug > 1: print "[%s] reconnecting socks.error: %s" % (self.name, e)
+              # FIXME: check sockssocket sources again, might be required to recreate the proxy with break as well
+              self.log(self.logger.ERROR, 'reconnecting socks.error: %s' % e)
             except sockssocket.ProxyError as e:
-              if self.debug > 1: print "[%s] reconnecting ProxyError: %s" % (self.name, e)
-              if self.debug > 1: print "[%s] recreating proxy socket" % self.name
+              self.log(self.logger.ERROR, 'reconnecting ProxyError: %s' % e)
+              #if self.debug > 1: print "[%s] recreating proxy socket" % self.name
               break
           if not self.running: break
           if not connected: continue
@@ -248,7 +256,7 @@ class feed(threading.Thread):
         try:
           in_buffer += self.socket.recv(self.buffersize)
         except socket.error as e:
-          print "[%s] DEBUG socket.error.errno: %s, socket.error: %s" % (self.name, e.errno, e)
+          self.log(self.logger.DEBUG, 'exception at socket.recv(): socket.error.errno: %s, socket.error: %s' % (e.errno, e))
           if e.errno == 11:
             # 11 Resource temporarily unavailable
             time.sleep(0.1)
@@ -261,11 +269,12 @@ class feed(threading.Thread):
             continue
           else:
             # FIXME: different OS might produce different error numbers. make this portable.
-            print "ERROR: [%s] got an unknown socket error at line 251 with error number %i: %s" % (self.name, e.errno, e)       
+            self.log(self.logger.ERROR, 'got an unknown socket error at socket.recv() at line 272 with error number %i: %s' % (e.errno, e))
+            self.log(self.logger.ERROR, traceback.format_exc())
             self.con_broken = True
             continue
         except sockssocket.ProxyError as e:
-          print "[%s] proxy error: %s" % (self.name, e)
+          self.log(self.logger.ERROR, 'exception at socket.recv(); sockssocket.proxy error.errno: %i, sockssocket.proxy error: %s' % (e.errno, e))
           self.con_broken = True
           continue
             #if self.debug > 1: print "[{0}] connection problem: {1}".format(self.name, e)
@@ -291,7 +300,7 @@ class feed(threading.Thread):
             self.handle_line(part)
           elif len(part) != 1:
             self.buffer_multiline.append(part)
-            if self.debug > 3: print "[{0}] multiline in: {1}".format(self.name, part)
+            self.log(self.logger.DEBUG, 'multiline in: %s' % part)
           else:
             if part[0] == '.':
               self.handle_multiline(self.buffer_multiline)
@@ -299,7 +308,7 @@ class feed(threading.Thread):
               del self.buffer_multiline[:]
             else:
               self.buffer_multiline.append(part)
-              if self.debug > 3: print "[{0}] multiline in: {1}".format(self.name, part)
+              self.log(self.logger.DEBUG, 'multiline in: %s' % part)
           if not self.multiline:
             self.state = 'idle'
         continue
@@ -333,14 +342,14 @@ class feed(threading.Thread):
               self.send('IHAVE {0}\r\n'.format(self.message_id))
             elif self.outstream_post:
               self.send('POST\r\n')
-    if self.debug > 1: print "[{0}] client disconnected".format(self.name)
+    self.log(self.logger.INFO, 'client disconnected')
     self.socket.close()
     self.SRNd.terminate_feed(self.name)
 
   def send_article(self, message_id):
     # FIXME: what the fuck? rewrite this whole def! waste RAM much.
     # FIXME: read line, convert, send, read next line. collect x lines before actually sending.
-    if self.debug > 1: print '[{0}] sending article {1}'.format(self.name, message_id)
+    self.log(self.logger.INFO, 'sending article %s' % message_id)
     self.multiline_out = True
     f = open(os.path.join('articles', message_id), 'r')
     article = ''
@@ -356,14 +365,14 @@ class feed(threading.Thread):
     #   article = article.replace('\n', '\r\n')
     add_one = False
     if article[-1] != '\n':
-      print "need to add a linebreak"
+      self.log(self.logger.DEBUG, 'need to add a linebreak')
       add_one = True
     article = article.split('\n')
     for index in xrange(0, len(article)):
       if len(article[index]) > 0:
         if article[index][0] == '.':
           article[index] = '.' + article[index]
-      if self.debug > 3: print "[{0}] out: {1}".format(self.name, message[:-2])
+      self.log(self.logger.VERBOSE, 'out: %s' % article[index])
     if add_one:
       article.append('\r\n')
     article = '\r\n'.join(article) + '.\r\n'
@@ -371,8 +380,8 @@ class feed(threading.Thread):
     sent = 0
     length = len(article)
     while sent != length:
-      if self.debug > 4 and sent > 0:
-        print "[{0}] resending part of line, starting at {1} to {2}".format(self.name, sent, length)
+      if sent > 0:
+        self.log(self.logger.DEBUG, 'resending part of line, starting at %i to %i' % (sent, length))
       try:
         sent += self.socket.send(article[sent:])
       except socket.error as e:
@@ -386,9 +395,13 @@ class feed(threading.Thread):
           self.con_broken = True
           break
         else:
-          print "ERROR: [%s] got an unknown socket error at line 378 with error number %i: %s" % (self.name, e.errno, e)
+          self.log(self.logger.ERROR, 'got an unknown socket error at socket.send(), line 398 with error number %i: %s' % (e.errno, e))
           self.con_broken = True
           break
+      except sockssocket.ProxyError as e:
+        self.log(self.logger.ERROR, 'got an unknown proxy error at socket.send(), line 402 with error number %i: %s' % (e.errno, e))
+        self.con_broken = True
+        break
 
     #line = f.readline()
     #while line != '' and not self.con_broken:
@@ -406,10 +419,10 @@ class feed(threading.Thread):
     self.multiline_out = False
 
   def handle_line(self, line):
-    if self.debug > 2: print "[{0}] in: {1}".format(self.name, line)
+    self.log(self.logger.VERBOSE, 'in: %s' % line)
     commands = line.upper().split(' ')
     if len(commands) == 0:
-      if self.debug > 1: print "[{0}] should handle empty line".format(self.name)
+      self.log(self.logger.VERBOSE, 'should handle empty line')
       return
     if self.outstream:
       if not self.outstream_ready:
@@ -474,8 +487,7 @@ class feed(threading.Thread):
           # IHAVE 335 == waiting for article
           self.send_article(self.message_id)
         else:
-          print "[outfeed] unknown response to IHAVE:"
-          print line
+          self.log(self.logger.INFO, 'unknown response to IHAVE: %s' % line)
       elif self.outstream_post:
         if commands[0] == '340':
           # POST 340 == waiting for article
@@ -488,14 +500,14 @@ class feed(threading.Thread):
             self.send('POST\r\n')
         elif commands[0] == '440':
           # POST 440 == posting not allowed
-          if self.debug > 0: print "[{0}] remote host does not allow MODE STREAM, IHAVE or POST. shutting down.".format(self.name)
+          self.log(self.logger.ERROR, 'remote host does not allow MODE STREAM, IHAVE or POST. shutting down')
           self.running = False
           try:
             self.socket.shutdown(socket.SHUT_RDWR)
           except:
             pass
         else:
-          print "[%s] unknown response to POST: %s" % (self.name, line)
+          self.log(self.logger.ERROR, 'unknown response to POST: %s' % line)
       return
     elif commands[0] == 'CAPABILITIES':
       for cap in self.caps:
@@ -565,8 +577,8 @@ class feed(threading.Thread):
             message_id = message_id[0]
             self.send('223 {0} {1}\r\n'.format(self.current_article_id, message_id))
           else:
-            if self.debug > -1: print "[{0}] error: internal state messed up. current_article_id does not have connected message_id.".format(feed.name)
-            if self.debug > -1: print "DEBUG: current_group_id: {0}, current_article_id: {1}".format(self.current_group_id, self.current_article_id)
+            self.log(self.logger.CRITICAL, 'internal state messed up. current_article_id does not have connected message_id')
+            self.log(self.logger.CRITICAL, 'current_group_id: %s, current_article_id: %s' % (self.current_group_id, self.current_article_id))
         return
       if len(commands) != 2:
         self.send('501 i much recommend in speak to the proper NNTP\r\n')
@@ -649,10 +661,10 @@ class feed(threading.Thread):
         f.close()
         self.waitfor = ''
         self.variant = ''
-        if self.debug > 1: print '[{0}] article invalid {1}: {2}'.format(self.name, message_id, error[:-2])
+        self.log(self.logger.INFO, 'article invalid %s: %s' % (message_id, error[:-2]))
         return
 
-      if self.debug > 1: print '[{0}] article received {1}'.format(self.name, message_id)
+      self.log(self.logger.INFO, 'article received %s' % message_id)
 
       # save article in tmp and mv to incoming
       if self.variant == 'POST':
@@ -674,11 +686,11 @@ class feed(threading.Thread):
         if not os.path.exists(target):
           os.rename(path, target)
         else:
-          if self.debug > 0: print '[{0}] got duplicate article: {1} does already exist. removing temporary file.'.format(self.name, target)
+          self.log(self.logger.INFO, 'got duplicate article: %s does already exist. removing temporary file' % target)
           os.remove(path)
       self.waitfor = ''
       self.variant = ''
     else:
-      print "[{0}] should handle multi line while waiting for {1}:".format(self.name, self.waitfor)
-      print ''.join(lines)
-      print "[{0}] should handle multi line end".format(self.name)
+      self.log(self.logger.INFO, 'should handle multi line while waiting for %s:' % self.waitfor)
+      self.log(self.logger.INFO, ''.join(lines))
+      self.log(self.logger.INFO, 'should handle multi line end')
