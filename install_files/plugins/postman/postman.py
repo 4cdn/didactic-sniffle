@@ -209,12 +209,12 @@ class postman(BaseHTTPRequestHandler):
       )
     frontend = post_vars.getvalue('frontend', '').replace('"', '&quot;')
     reply = post_vars.getvalue('reply', '').replace('"', '&quot;')
-    if frontend == 'overchan' and reply != '':
-      # FIXME add ^ allow_reply_bypass to frontend configuration
-      if self.origin.captcha_bypass_after_timestamp_reply < int(time.time()):
-        self.origin.log(self.origin.logger.INFO, 'bypassing captcha for reply')
-        self.handleNewArticle(post_vars) 
-        return
+    #if frontend == 'overchan' and reply != '':
+    #  # FIXME add ^ allow_reply_bypass to frontend configuration
+    #  if self.origin.captcha_bypass_after_timestamp_reply < int(time.time()):
+    #    self.origin.log(self.origin.logger.INFO, 'bypassing captcha for reply')
+    #    self.handleNewArticle(post_vars) 
+    #    return
     board = post_vars.getvalue('board', '').replace('"', '&quot;')
     target = post_vars.getvalue('target', '').replace('"', '&quot;')
     name = post_vars.getvalue('name', '').replace('"', '&quot;')
