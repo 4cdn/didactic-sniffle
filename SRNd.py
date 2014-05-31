@@ -577,7 +577,14 @@ class SRNd(threading.Thread):
           file_list = os.listdir(group_dir)
           random.shuffle(file_list)
           for link in file_list:
-            message_id = os.path.basename(os.readlink(os.path.join(group_dir, link)))
+            try:
+              message_id = os.path.basename(os.readlink(os.path.join(group_dir, link)))
+              if os.stat(os.path.join(group_dir, link)).st_size == 0:
+                self.log(self.logger.WARNING, 'empty article found in group %s with id %s pointing to %s' % (group_dir, link, message_id))
+                continue
+            except:
+              self.log(self.logger.ERROR, 'invalid link found in group %s with id %s' % (group_dir, link))
+              continue
             for current_hook in current_sync_targets:
               if current_hook.startswith('outfeed-'):
                 self.feeds[current_hook].add_article(message_id)
@@ -588,6 +595,7 @@ class SRNd(threading.Thread):
     self.log(self.logger.DEBUG, 'startup_sync done. hopefully.')
     del current_sync_targets
     
+    #files = filter(lambda f: os.stat(os.path.join(group_dir, f)).st_size > 0, os.listdir(group_dir)
     #files = filter(lambda f: os.path.isfile(os.path.join('articles', f)), os.listdir('articles'))
     #files.sort(key=lambda f: os.path.getmtime(os.path.join('articles', f)))
     #for name in self.feeds:
