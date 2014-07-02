@@ -83,6 +83,15 @@ class main(threading.Thread):
       if args['generate_all'].lower() in ('false', 'no'):
         self.regenerate_html_on_startup = False
 
+    self.threads_per_page = 10
+    if 'threads_per_page' in args:
+      try:    self.threads_per_page = int(args['threads_per_page'])
+      except: pass
+    self.pages_per_board = 10
+    if 'pages_per_board' in args:
+      try:    self.pages_per_board = int(args['pages_per_board'])
+      except: pass
+
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.die('replacement for root posts without picture not found: %s' % os.path.join(self.template_directory, self.no_file))
@@ -906,6 +915,8 @@ class main(threading.Thread):
     return True
 
   def generate_board(self, group_id):
+    threads_per_page = self.threads_per_page
+    pages_per_board = self.pages_per_board
     # FIXME: cache board_name, _unquoted, _full
     full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
     full_board_name = self.basicHTMLencode(full_board_name_unquoted)
@@ -923,18 +934,18 @@ class main(threading.Thread):
     boardlist[-1] = boardlist[-1][:-1]
     boardlist = ''.join(boardlist)
     
-    threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, 10*10)).fetchone()[0])
-    pages = int(threads / 10)
-    if threads % 10 != 0:
+    threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, threads_per_page * pages_per_board)).fetchone()[0])
+    pages = int(threads / threads_per_page)
+    if threads % threads_per_page != 0:
       pages += 1;
     thread_counter = 0
     page_counter = 1
     threads = list()
       
-    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ?', (group_id, 10*10)).fetchall():
+    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ?', (group_id, threads_per_page * pages_per_board)).fetchall():
       t_engine_mapper_root = dict() 
       root_message_id_hash = sha1(root_row[0]).hexdigest()
-      if thread_counter == 10:
+      if thread_counter == threads_per_page:
         self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
         t_engine_mapper_board = dict()
         t_engine_mapper_board['threads'] = ''.join(threads)
