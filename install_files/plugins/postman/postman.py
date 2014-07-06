@@ -454,7 +454,7 @@ class postman(BaseHTTPRequestHandler):
     if 'enforce_target' in self.origin.frontends[frontend]:
       redirect_target = self.origin.frontends[frontend]['enforce_target'].replace('%%sha1_message_uid_10%%', sha1(message_uid).hexdigest()[:10])
     else:
-      redirect_target = post_vars['target'].value
+      redirect_target = post_vars['target'].value.replace('%%sha1_message_uid_10%%', sha1(message_uid).hexdigest()[:10])
     if 'hash' in post_vars:
       redirect_target = '/' + redirect_target
     boundary = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(40))
