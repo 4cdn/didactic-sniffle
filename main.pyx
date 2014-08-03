@@ -1,7 +1,8 @@
 #!/usr/bin/python
+
+import os
 import time
 import signal
-import os
 import threading
 import platform
 
@@ -80,10 +81,11 @@ except KeyboardInterrupt:
 log(logger.INFO, 'shutting down..')
 srnd.shutdown()
 for thread in threading.enumerate():
-  #print "joining ", thread
-  try:
-    thread.join()
+  if thread.name == 'logger': continue
+  try: thread.join()
   except RuntimeError as e:
     pass
+logger.running = False
+logger.join()
 log(logger.INFO, 'bye')
 exit(0)
