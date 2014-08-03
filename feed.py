@@ -71,6 +71,7 @@ class feed(threading.Thread):
     self.current_group_id = -1
     self.current_article_id = -1
     self.sync_on_startup = sync_on_startup
+    self.qsize = 0
 
   def init_socket(self):
     if ':' in self.host:
@@ -164,19 +165,21 @@ class feed(threading.Thread):
       self.send(self.welcome + '\r\n')
     else:
       self.articles_to_send = list()
+      cooldown_msg = ''
       while self.running and not connected:
+        self.qsize = self.queue.qsize() + len(self.articles_to_send)
         self.state = 'cooldown'
-        self.cooldown()
+        self.cooldown(cooldown_msg)
         if not self.running:
           break
         self.state = 'connecting'
         try:
           self.socket.connect((self.host, self.port))
           connected = True
-          #if self.cooldown_counter == 10:
-          #  self.log(self.logger.DEBUG, 'connection established via proxy %s' % str(self.proxy))
-          #else:
-          self.log(self.logger.INFO, 'connection established via proxy %s' % str(self.proxy))
+          if self.cooldown_counter == 10:
+            self.log(self.logger.DEBUG, 'connection established via proxy %s' % str(self.proxy))
+          else:
+            self.log(self.logger.INFO, 'connection established via proxy %s' % str(self.proxy))
         except socket.error as e:
           if e.errno == 106:
             # tunnelendpoint already connected. wtf? only happened via proxy
@@ -186,11 +189,17 @@ class feed(threading.Thread):
           elif e.errno == 9:
             # Bad file descriptor
             self.init_socket()
+            cooldown_msg = "can't connect: %s. " % e
+          elif e.errno == 113:
+            # no route to host
+            cooldown_msg = "can't connect: %s. " % e
           else:
-            self.log(self.logger.ERROR, 'connect socket.error: %s' % e)
+            self.log(self.logger.ERROR, 'unhandled initial connect socket.error: %s' % e)
             self.log(self.logger.ERROR, traceback.format_exc())
+            cooldown_msg = "can't connect: %s. " % e
         except sockssocket.ProxyError as e:
-          self.log(self.logger.ERROR, 'connect ProxyError: %s' % e)
+          cooldown_msg = "can't connect: %s. " % e
+          self.log(self.logger.ERROR, 'unhandled initial connect ProxyError: %s' % e)
     self.state = 'idle'
     poll = select.poll()
     poll.register(self.socket.fileno(), select.POLLIN | select.POLLPRI)
@@ -213,6 +222,7 @@ class feed(threading.Thread):
           self.socket.close()
           self.init_socket()
           while self.running and not connected:
+            self.qsize = self.queue.qsize() + len(self.articles_to_send)
             # TODO create def connect(), use self.vars for buffer, connected and poll
             if len(self.articles_to_send) == 0 and self.queue.qsize() == 0:
               self.log(self.logger.INFO, 'connection broken. no article to send, sleeping')
@@ -243,9 +253,9 @@ class feed(threading.Thread):
               self.state = 'idle'
             except socket.error as e:
               # FIXME: check sockssocket sources again, might be required to recreate the proxy with break as well
-              self.log(self.logger.ERROR, 'reconnecting socks.error: %s' % e)
+              self.log(self.logger.ERROR, 'unhandled reconnect socks.error: %s' % e)
             except sockssocket.ProxyError as e:
-              self.log(self.logger.ERROR, 'reconnecting ProxyError: %s' % e)
+              self.log(self.logger.ERROR, 'unhandled reconnect ProxyError: %s' % e)
               #if self.debug > 1: print "[%s] recreating proxy socket" % self.name
               break
           if not self.running: break
@@ -318,12 +328,15 @@ class feed(threading.Thread):
           #print "[{0}] queue size: {1}".format(self.name, self.queue.qsize())
           if self.outstream_stream:
             self.state = 'outfeed_send_article_stream'
+            self.qsize = self.queue.qsize() + len(self.articles_to_send)
             for message_id in self.articles_to_send:
               if self.con_broken: break
               if os.path.exists(os.path.join('articles', message_id)):
                 self.send('TAKETHIS {0}\r\n'.format(message_id))
                 self.send_article(message_id)
+                self.qsize -= 1
             if not self.con_broken: del self.articles_to_send[:]
+            self.qsize = self.queue.qsize() + len(self.articles_to_send)
             self.state = 'outfeed_send_check_stream'
             count = 0
             while self.queue.qsize() > 0 and count <= 50 and not self.con_broken:
@@ -342,6 +355,7 @@ class feed(threading.Thread):
               self.send('IHAVE {0}\r\n'.format(self.message_id))
             elif self.outstream_post:
               self.send('POST\r\n')
+          self.qsize = self.queue.qsize() + len(self.articles_to_send)
     self.log(self.logger.INFO, 'client disconnected')
     self.socket.close()
     self.SRNd.terminate_feed(self.name)
