@@ -617,7 +617,7 @@ class feed(threading.Thread):
         if os.path.exists(os.path.join('articles', arg)):
           self.send('223 0 {0}\r\n'.format(arg))
         else:
-          self.send('426 i do not know much in {0}\r\n'.format(arg))
+          self.send('430 i do not know much in {0}\r\n'.format(arg))
     else:
       self.send('501 i much recommend in speak to the proper NNTP based on CAPABILITIES\r\n')
 
