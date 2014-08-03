@@ -388,8 +388,8 @@ class feed(threading.Thread):
           article[index] = '.' + article[index]
       self.log(self.logger.VERBOSE, 'out: %s' % article[index])
     if add_one:
-      article.append('\r\n')
-    article = '\r\n'.join(article) + '.\r\n'
+      article.append('')
+    article = '\r\n'.join(article)
     self.state = 'sending'
     sent = 0
     length = len(article)
@@ -426,7 +426,6 @@ class feed(threading.Thread):
     #  line = f.readline()
     #f.close()
     if not self.con_broken:
-      # FIXME: the fuck? .\r\n already added previously. how does this even work? 
       self.send('.\r\n')
     else:
       self.add_article(message_id)
