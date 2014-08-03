@@ -381,7 +381,7 @@ class feed(threading.Thread):
     if article[-1] != '\n':
       self.log(self.logger.DEBUG, 'need to add a linebreak')
       add_one = True
-    article = article.split('\n')
+    article = article.replace('\r', '').split('\n')
     for index in xrange(0, len(article)):
       if len(article[index]) > 0:
         if article[index][0] == '.':
