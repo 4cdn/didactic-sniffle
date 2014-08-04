@@ -466,11 +466,11 @@ class postman(BaseHTTPRequestHandler):
       link = os.path.join('incoming', 'tmp', boundary)
     f = open(link, 'w')
     if file_name == '':
-      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage))
+      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage).replace('\r', ''))
     else:
-      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage))
+      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage).replace('\r', ''))
       if 'hash' in post_vars:
-        f.write(post_vars.getvalue('file_b64', ''))
+        f.write(post_vars.getvalue('file_b64', '').replace('\r', ''))
       else:
         base64.encode(post_vars['file'].file, f)
       f.write('--{0}--\n'.format(boundary))
