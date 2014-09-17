@@ -106,7 +106,11 @@ class logger(threading.Thread):
   def run(self):
     for target in self.targets:
       date = datetime.utcfromtimestamp(time.time()).strftime(target[3])
-      target[0].write(target[2].substitute(date=date, loglevel=loglevel_names_nice[self.INFO], source='logger', message='starting up'))
+      if target == 'stderr':
+          lgn = loglevel_names_nice
+      else:
+          lgn = loglevel_names
+      target[0].write(target[2].substitute(date=date, loglevel=lgn[self.INFO], source='logger', message='starting up'))
       target[0].flush()
     self.running = True
     while True:
@@ -117,7 +121,7 @@ class logger(threading.Thread):
           for target in self.targets:
             if loglevel in target[1]:
               date = datetime.utcfromtimestamp(time.time()).strftime(target[3])
-              target[0].write(target[2].substitute(date=date, loglevel=loglevel_names_nice[loglevel], source=source, message=line))
+              target[0].write(target[2].substitute(date=date, loglevel=lgn[loglevel], source=source, message=line))
             target[0].flush()
       except Queue.Empty:
         if not self.running:
@@ -125,7 +129,7 @@ class logger(threading.Thread):
           break
     for target in self.targets:
       date = datetime.utcfromtimestamp(time.time()).strftime(target[3])
-      target[0].write(target[2].substitute(date=date, loglevel=loglevel_names_nice[self.INFO], source='logger', message='closing down'))
+      target[0].write(target[2].substitute(date=date, loglevel=lgn[self.INFO], source='logger', message='closing down'))
       target[0].flush()
 
 if __name__ == '__main__':
