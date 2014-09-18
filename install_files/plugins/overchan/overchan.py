@@ -1012,7 +1012,7 @@ class main(threading.Thread):
       t_engine_mapper_root['articlehash_full'] = root_message_id_hash
       t_engine_mapper_root['author'] = root_row[1]
       t_engine_mapper_root['subject'] = root_row[2]
-      t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M')
+      t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
       t_engine_mapper_root['imagelink'] = root_imagelink
       t_engine_mapper_root['thumblink'] = root_thumblink
       t_engine_mapper_root['imagename'] =  root_row[5]
@@ -1058,7 +1058,7 @@ class main(threading.Thread):
         t_engine_mapper_child['articlehash_full'] = article_hash
         t_engine_mapper_child['author'] = child_row[1]
         t_engine_mapper_child['subject'] = child_row[2]
-        t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M')
+        t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
         t_engine_mapper_child['message'] = message
         if child_row[6] != '':
           childs.append(self.t_engine_message_pic.substitute(t_engine_mapper_child))
@@ -1148,7 +1148,7 @@ class main(threading.Thread):
     t_engine_mappings_root['articlehash_full'] = root_message_id_hash
     t_engine_mappings_root['author'] = root_row[1]
     t_engine_mappings_root['subject'] = root_row[2]
-    t_engine_mappings_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%Y/%m/%d %H:%M')
+    t_engine_mappings_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
     t_engine_mappings_root['imagelink'] = root_imagelink
     t_engine_mappings_root['thumblink'] = root_thumblink
     t_engine_mappings_root['imagename'] = root_row[5]
@@ -1184,7 +1184,7 @@ class main(threading.Thread):
       t_engine_mappings_child['articlehash_full'] = article_hash
       t_engine_mappings_child['author'] = child_row[1]
       t_engine_mappings_child['subject'] = child_row[2]
-      t_engine_mappings_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%Y/%m/%d %H:%M')
+      t_engine_mappings_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
       message = self.linker.sub(self.linkit, child_row[4])
       message = self.quoter.sub(self.quoteit, message)
       message = self.coder.sub(self.codeit, message)      
@@ -1256,7 +1256,7 @@ class main(threading.Thread):
       else:
         message = row[1]
       t_engine_mappings_overview['subject'] = row[0]
-      t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%Y/%m/%d %H:%M')
+      t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%d.%m.%Y (%a) %H:%M')
       t_engine_mappings_overview['author'] = row[5]
       t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
       t_engine_mappings_overview['pubkey'] = row[3]
@@ -1289,7 +1289,7 @@ class main(threading.Thread):
 
     postcount = 23
     for row in self.sqlite.execute('SELECT sent, group_name, sender, subject, article_uid, parent FROM articles, groups WHERE groups.blocked = 0 AND articles.group_id = groups.group_id ORDER BY sent DESC LIMIT ' + str(postcount)).fetchall():
-      sent = datetime.utcfromtimestamp(row[0]).strftime('%Y/%m/%d %H:%M UTC')
+      sent = datetime.utcfromtimestamp(row[0]).strftime('%d.%m.%Y (%a) %H:%M UTC')
       board = self.basicHTMLencode(row[1].replace('"', '')).split('.', 1)[1]
       author = row[2]
       articlehash = sha1(row[4]).hexdigest()[:10]
@@ -1309,7 +1309,7 @@ class main(threading.Thread):
         author = author[:20] + ' [..]'
       stats.append(self.template_latest_posts_row.replace('%%sent%%', sent).replace('%%board%%', board).replace('%%parent%%', parent).replace('%%articlehash%%', articlehash).replace('%%author%%', author).replace('%%subject%%', subject))
     #for row in self.sqlite.execute('SELECT articles.last_update, group_name, sender, subject, article_uid FROM articles, groups WHERE (parent = "" or parent = article_uid) AND articles.group_id = groups.group_id ORDER BY articles.last_update DESC LIMIT ' + str(postcount)).fetchall():
-    #  last_update = datetime.utcfromtimestamp(row[0]).strftime('%Y/%m/%d %H:%M UTC')
+    #  last_update = datetime.utcfromtimestamp(row[0]).strftime('%d.%m.%Y (%a) %H:%M UTC')
     #  board = self.basicHTMLencode(row[1].replace('"', '')).split('.', 1)[1]
     #  subject = row[3]
     #  parent = sha1(row[4]).hexdigest()[:10]
