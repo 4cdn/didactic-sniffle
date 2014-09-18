@@ -23,9 +23,18 @@ email=nobody@no.where
 
 (allowed_files)
 image/*
+text/x-patch
 application/pdf
 application/ps
 application/postscript
+application/x-bittorrent
+application/zip
+application/x-gzip
+application/x-rar-compressed
+application/x-tar
+application/x-tex
+audio/*
+video/*
 
 (allowed_boards)
 overchan.*
