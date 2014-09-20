@@ -117,32 +117,32 @@ class main(threading.Thread):
 
     # TODO use tuple instead and load in above loop. seriously.
     # statics
-    f = open(os.path.join(self.template_directory, 'help.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'help.tmpl'), "r", "utf-8")
     self.template_help = f.read()
     f.close()
     
     # still to convert
-    f = open(os.path.join(self.template_directory, 'stats_usage.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'stats_usage.tmpl'), "r", "utf-8")
     self.template_stats_usage = f.read()
     f.close()
-    f = open(os.path.join(self.template_directory, 'stats_usage_row.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'stats_usage_row.tmpl'), "r", "utf-8")
     self.template_stats_usage_row = f.read()
     f.close()
-    f = open(os.path.join(self.template_directory, 'latest_posts.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'latest_posts.tmpl'), "r", "utf-8")
     self.template_latest_posts = f.read()
     f.close()
-    f = open(os.path.join(self.template_directory, 'latest_posts_row.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'latest_posts_row.tmpl'), "r", "utf-8")
     self.template_latest_posts_row = f.read()
     f.close()
-    f = open(os.path.join(self.template_directory, 'stats_boards.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'stats_boards.tmpl'), "r", "utf-8")
     self.template_stats_boards = f.read()
     f.close()
-    f = open(os.path.join(self.template_directory, 'stats_boards_row.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'stats_boards_row.tmpl'), "r", "utf-8")
     self.template_stats_boards_row = f.read()
     f.close()
     
     # template_engines
-    f = open(os.path.join(self.template_directory, 'board.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'board.tmpl'), "r", "utf-8")
     self.t_engine_board = string.Template(
       string.Template(f.read()).safe_substitute(
         help=self.template_help,
@@ -150,7 +150,7 @@ class main(threading.Thread):
       )
     )
     f.close()
-    f = open(os.path.join(self.template_directory, 'thread_single.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'thread_single.tmpl'), "r", "utf-8")
     self.t_engine_thread_single = string.Template(
       string.Template(f.read()).safe_substitute(
         help=self.template_help,
@@ -158,7 +158,7 @@ class main(threading.Thread):
       )
     )
     f.close
-    f = open(os.path.join(self.template_directory, 'overview.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'overview.tmpl'), "r", "utf-8")
     self.t_engine_overview = string.Template(
       string.Template(f.read()).safe_substitute(
         help=self.template_help,
@@ -166,19 +166,19 @@ class main(threading.Thread):
       )
     )
     f.close()
-    f = open(os.path.join(self.template_directory, 'board_threads.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'board_threads.tmpl'), "r", "utf-8")
     self.t_engine_board_threads = string.Template(f.read())
     f.close
-    f = open(os.path.join(self.template_directory, 'message_root.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'message_root.tmpl'), "r", "utf-8")
     self.t_engine_message_root = string.Template(f.read())
     f.close()
-    f = open(os.path.join(self.template_directory, 'message_child_pic.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'message_child_pic.tmpl'), "r", "utf-8")
     self.t_engine_message_pic = string.Template(f.read())
     f.close()
-    f = open(os.path.join(self.template_directory, 'message_child_nopic.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'message_child_nopic.tmpl'), "r", "utf-8")
     self.t_engine_message_nopic = string.Template(f.read())
     f.close()
-    f = open(os.path.join(self.template_directory, 'signed.tmpl'))
+    f = codecs.open(os.path.join(self.template_directory, 'signed.tmpl'), "r", "utf-8")
     self.t_engine_signed = string.Template(f.read())
     f.close()
     
