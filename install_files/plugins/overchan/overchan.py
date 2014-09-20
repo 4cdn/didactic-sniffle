@@ -1271,7 +1271,7 @@ class main(threading.Thread):
     max = 0
     stats = list()
     bar_length = 20
-    days = 21
+    days = 30
     totals = int(self.sqlite.execute('SELECT count(1) FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days")').fetchone()[0])
     stats.append(self.template_stats_usage_row.replace('%%postcount%%', str(totals)).replace('%%date%%', 'all posts').replace('%%weekday%%', '').replace('%%bar%%', 'since %s days' % days))
     for row in self.sqlite.execute('SELECT count(1) as counter, strftime("%Y-%m-%d",  sent, "unixepoch") as day, strftime("%w", sent, "unixepoch") as weekday FROM articles WHERE sent > strftime("%s", "now", "-' + str(days) + ' days") GROUP BY day ORDER BY day DESC').fetchall():
@@ -1290,7 +1290,7 @@ class main(threading.Thread):
     t_engine_mappings_overview['stats_usage'] = overview_stats_usage
     del stats[:]
 
-    postcount = 23
+    postcount = 50
     for row in self.sqlite.execute('SELECT sent, group_name, sender, subject, article_uid, parent FROM articles, groups WHERE groups.blocked = 0 AND articles.group_id = groups.group_id ORDER BY sent DESC LIMIT ' + str(postcount)).fetchall():
       sent = datetime.utcfromtimestamp(row[0]).strftime('%d.%m.%Y (%a) %H:%M UTC')
       board = self.basicHTMLencode(row[1].replace('"', '')).split('.', 1)[1]
