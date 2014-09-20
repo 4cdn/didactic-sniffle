@@ -1258,7 +1258,10 @@ class main(threading.Thread):
       t_engine_mappings_overview['subject'] = row[0]
       t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%d.%m.%Y (%a) %H:%M')
       t_engine_mappings_overview['author'] = row[5]
-      t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
+      if not row[3] == '':
+          t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
+      else:
+          t_engine_mappings_overview['pubkey_short'] = ''
       t_engine_mappings_overview['pubkey'] = row[3]
       t_engine_mappings_overview['postid'] = postid
       t_engine_mappings_overview['parent'] = parent
