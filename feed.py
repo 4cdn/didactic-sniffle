@@ -300,7 +300,7 @@ class feed(threading.Thread):
             self.handle_line(part)
           elif len(part) != 1:
             self.buffer_multiline.append(part)
-            self.log(self.logger.DEBUG, 'multiline in: %s' % part)
+            self.log(self.logger.VERBOSE, 'multiline in: %s' % part)
           else:
             if part[0] == '.':
               self.handle_multiline(self.buffer_multiline)
@@ -308,7 +308,7 @@ class feed(threading.Thread):
               del self.buffer_multiline[:]
             else:
               self.buffer_multiline.append(part)
-              self.log(self.logger.DEBUG, 'multiline in: %s' % part)
+              self.log(self.logger.VERBOSE, 'multiline in: %s' % part)
           if not self.multiline:
             self.state = 'idle'
         continue
