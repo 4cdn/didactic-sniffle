@@ -202,6 +202,17 @@ class SRNd(threading.Thread):
             self.chroot = True
         elif key == 'setuid':
           self.setuid = value
+        elif key == 'srnd_debuglevel':
+          error = False
+          try:
+            self.loglevel = int(value)
+            if self.loglevel > 5 or self.loglevel < 0:
+              error = True
+          except ValueError as e:
+            error = True
+          if error:
+            self.loglevel = 2
+            self.log(self.logger.WARNING, 'srnd_debuglevel: only accepting integer between 0 and 5. using default of 2')
         elif key == 'infeed_debuglevel':
           error = False
           try:
@@ -314,6 +325,7 @@ class SRNd(threading.Thread):
       f.write('data_dir={0}\n'.format(self.data_dir))
       f.write('use_chroot={0}\n'.format(self.chroot))
       f.write('setuid={0}\n'.format(self.setuid))
+      f.write('srnd_debuglevel={0}\n'.format(self.loglevel))
       f.write('infeed_debuglevel={0}\n'.format(self.infeed_debug))
       f.write('dropper_debuglevel={0}\n'.format(self.dropper_debug))
       f.write('instance_name={0}\n'.format(self.instance_name))
@@ -450,7 +462,7 @@ class SRNd(threading.Thread):
       if os.path.isfile(outfeed_file):
         f = open(outfeed_file)
         sync_on_startup = False
-        debuglevel = 2
+        debuglevel = self.loglevel
         proxy_type = None
         proxy_ip = None
         proxy_port = None
