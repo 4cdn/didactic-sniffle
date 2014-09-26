@@ -554,6 +554,9 @@ class SRNd(threading.Thread):
               if not current_hook_blacklisted:
                 if current_hook.startswith('outfeeds-'):
                   # FIXME this doesn't look like its working with ipv6?
+                  if current_hook[9:].find(':') == -1:
+                    self.log(self.logger.ERROR, 'outfeed filename should be in host:port format')
+                    break
                   parts = current_hook[9:].split(':')
                   name = 'outfeed-' + ':'.join(parts[:-1]) + '-' + parts[-1]
                   if name in self.feeds:
