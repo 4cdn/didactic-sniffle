@@ -673,6 +673,12 @@ class feed(threading.Thread):
         self.send('235 article received\r\n')
         #TODO: failed but try again later ==> 436
       elif self.variant == 'TAKETHIS':
+        if os.path.exists(os.path.join('articles', message_id)) or os.path.exists(os.path.join('incoming', message_id)):
+          self.send('439 {0} i know this article already\r\n'.format(message_id))
+          return
+        if os.path.exists(os.path.join('articles', 'censored', message_id)):
+          self.send('439 {0} article is blacklisted\r\n'.format(message_id))
+          return
         self.send('239 {0} article received\r\n'.format(self.message_id_takethis))
         self.message_id_takethis = ''
       if not os.path.exists(os.path.join('articles', 'censored', message_id)):
