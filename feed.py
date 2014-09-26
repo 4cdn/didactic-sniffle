@@ -664,7 +664,7 @@ class feed(threading.Thread):
         self.log(self.logger.INFO, 'article invalid %s: %s' % (message_id, error[:-2]))
         return
 
-      self.log(self.logger.INFO, 'article received %s' % message_id)
+      self.log(self.logger.DEBUG, 'article received %s' % message_id)
 
       # save article in tmp and mv to incoming
       if self.variant == 'POST':
