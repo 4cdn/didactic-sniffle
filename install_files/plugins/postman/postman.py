@@ -63,7 +63,7 @@ class postman(BaseHTTPRequestHandler):
     self.path = unquote(self.path)
     if self.path == '/incoming':
       if self.origin.captcha_verification:
-        self.send_captcha(message=random.choice(self.origin.quote_list))
+        self.send_captcha(message=self.get_random_quote())
       else:
         self.handleNewArticle()
       return
@@ -159,11 +159,33 @@ class postman(BaseHTTPRequestHandler):
   def log_message(self, format):
     return
 
+  def get_random_quote(self):
+    quotes = (
+      '''<i>"Being stupid for no reason is very human-like. I will continue to spam."</i> <b>Spammer-kun</b>''',
+      '''<i>"I bet the jews did this..."</i> <b>wowaname</b>''',
+      '''<i>"Put a Donk on it."</i> <b>Krane</b>''',
+      '''<i>"All You're Base are belong to us."</i> <b>Eric Schmit</b>''',
+      '''<i>"I was just pretending to be retarded!!"</i> <b>Anonymous</b>''',
+      '''<i>"Sometimes I wish I didn't have a diaper fetish."</i> <b>wowaname</b>''',
+      '''<i>"DOES. HE. LOOK. LIKE. A BITCH?"</i> <b>Jesus Christ our Lord And Savior</b>''',
+      '''<i>"ENGLISH MOTHERFUCKA DO YOU SPEAK IT?"</i> <b>Jesus Christ our Lord And Savior</b>''',
+      '''<i>"We are watching you masturbate"</i> <b>NSA Internet Anonymity Specialist and Privacy Expert</b>''',
+      '''<i>"I want to eat apples and bananas"</i> <b>Cookie Monster</b>''',
+      '''<i>"Ponies are red, Twilight is blue, I have a boner, and so do you</i> <b>TriPh0rce, Maintainer of All You're Wiki</b>''',
+      '''<i>"C++ is a decent language and there is almost no reason to use C in the modern age"</i> <b>psi</b>''',
+      '''<i>"windows is full of aids"</i> <b>wowaname</b>'''
+    )
+    quotefile = 'plugins/postman/quotes.txt'
+    if os.path.exists(quotefile):
+      with open(quotefile) as f:
+        quotes = [q for q in f]
+    return random.choice(quotes)
+
   def failCaptcha(self, vars):
     msg = self.get_random_quote()
     msg += '<br/><b><font style="color: red;">failed. hard.</font></b>'
     self.send_captcha(msg, vars)
-
+    
   def handleVerify(self):
     post_vars = FieldStorage(
       fp=self.rfile,
@@ -721,16 +743,9 @@ class main(threading.Thread):
     self.httpd.captcha_font = ImageFont.truetype('plugins/postman/Vera.ttf', 30)
     self.httpd.captcha_filter = ImageFilter.EMBOSS
     self.httpd.captcha_tiles = list()
+    self.httpd.qoutefile = 'plugins/postman/quotes.txt'
     for item in os.listdir('plugins/postman/tiles'):
       self.httpd.captcha_tiles.append(Image.open('plugins/postman/tiles/%s' % item))
-    self.httpd.quote_list = (
-      '''<i>"Nin knew how much humans loved money, riches, and material things - though he never really could understand why. The more technologically advanced the human species got, the more isolated they seemed to become, at the same time. It was alarming, how humans could spend entire lifetimes engaged in all kinds of activities, without getting any closer to knowing who they really were, inside."</i> <b>Jess C. Scott, The Other Side of Life</b>''',
-      '''<i>"The future is unwritten. there are best case scenarios. There are worst-case scenarios. both of them are great fun to write about if you' re a science fiction novelist, but neither of them ever happens in the real world. What happens in the real world is always a sideways-case scenario. World-changing marvels to us, are only wallpaper to our children."</i> <b>Bruce Sterling</b>''',
-      '''<i>"The technical revolution reshaping our society is based not in hierarchy but in decentralization, not in rigidity, but in fluidity."</i>''',
-      '''<i>"I may disagree with what you have to say, but I shall defend, to the death, your right to say it."</i>''',
-      '''<i>"Can't show this on a Christian imageboard."</i> <b>Anonymous</b>''',
-      '''<i>"Being stupid for no reason is very human-like. I will continue to spam."</i> <b>Spammer-kun</b>'''
-    )
     foobar = self.captcha_render_b64('abc', self.httpd.captcha_tiles, self.httpd.captcha_font, self.httpd.captcha_filter)
     del foobar
     f = open('/dev/urandom', 'r')
