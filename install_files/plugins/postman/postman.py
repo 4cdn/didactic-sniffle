@@ -159,6 +159,11 @@ class postman(BaseHTTPRequestHandler):
   def log_message(self, format):
     return
 
+  def failCaptcha(self, vars):
+    msg = self.get_random_quote()
+    msg += '<br/><b><font style="color: red;">failed. hard.</font></b>'
+    self.send_captcha(msg, vars)
+
   def handleVerify(self):
     post_vars = FieldStorage(
       fp=self.rfile,
@@ -170,17 +175,17 @@ class postman(BaseHTTPRequestHandler):
     )
     for item in ('expires', 'hash', 'solution'):
       if item not in post_vars:
-        self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+        self.failCaptcha(post_vars)
         return
     if not self.origin.captcha_require_cookie:
       if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret):
         self.handleNewArticle(post_vars)
         return
-      self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+      self.failCaptcha(post_vars)
       return
     cookie = self.headers.get('Cookie')
     if not cookie:
-      self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+      self.failCaptcha(post_vars)
       return
     cookie = cookie.strip()
     for item in cookie.split(';'):
@@ -188,12 +193,12 @@ class postman(BaseHTTPRequestHandler):
         cookie = item
     cookie = cookie.strip().split('=', 1)[1]
     if len(cookie) != 32:
-      self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+      self.failCaptcha(post_vars)
       return
     if self.origin.captcha_verify(post_vars['expires'].value, post_vars['hash'].value, post_vars['solution'].value, self.origin.captcha_secret + cookie):
       self.handleNewArticle(post_vars)
       return
-    self.send_captcha('<b><font style="color: red;">failed. hard.</font></b>', post_vars)
+    self.failCaptcha(post_vars)
   
   def send_captcha(self, message='', post_vars=None):
     failed = True
