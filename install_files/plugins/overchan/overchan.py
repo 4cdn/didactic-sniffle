@@ -50,12 +50,13 @@ class main(threading.Thread):
     self.sleep_time = 0.02
 
     error = ''
-    for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title'):
+    for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title', 'audio_file'):
       if not arg in args:
         error += "%s not in arguments\n" % arg
     if error != '':
       error = error.rstrip("\n")
       self.die(error)
+    self.pages = 15
     self.output_directory = args['output_directory']
     self.database_directory = args['database_directory']
     self.template_directory = args['template_directory']
@@ -66,6 +67,8 @@ class main(threading.Thread):
     self.no_file = args['no_file']
     self.invalid_file = args['invalid_file']
     self.document_file = args['document_file']
+    self.audio_file = args['audio_file']
+    self.webm_file = args['webm_file']
     self.css_file = args['css_file']
     self.loglevel = self.logger.INFO
     if 'debug' in args:
@@ -95,7 +98,8 @@ class main(threading.Thread):
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.die('replacement for root posts without picture not found: %s' % os.path.join(self.template_directory, self.no_file))
-
+    if not os.path.exists(os.path.join(self.template_directory, self.audio_file)):
+      self.die('replacement for posts with audio not found: %s' % os.path.join(self.template_directory, self.audio_file))
     if not os.path.exists(os.path.join(self.template_directory, self.invalid_file)):
       self.die('replacement for posts with invalid pictures not found: %s' % os.path.join(self.template_directory, self.invalid_file))
     if not os.path.exists(os.path.join(self.template_directory, self.document_file)):
@@ -793,6 +797,7 @@ class main(threading.Thread):
     fd.close()
     result = parser.close()
     del parser
+    out_link = None
     image_name_original = ''
     image_name = ''
     thumb_name = ''
@@ -876,7 +881,7 @@ class main(threading.Thread):
           imagehash = sha1(f.read()).hexdigest()
           image_name = image_name_original.split('.')[-1].lower()
           if image_name in ('html', 'php'):
-            image_name = 'txt'
+            image_name = 'fake.and.gay.txt'
           image_name = imagehash + '.' + image_name
           out_link = os.path.join(self.output_directory, 'img', image_name)
           f.close()
@@ -890,6 +895,68 @@ class main(threading.Thread):
           os.remove(tmp_link)
         elif part.get_content_type().lower() == 'text/plain':
           message += part.get_payload(decode=True)
+        elif part.get_content_type().lower() in ('audio/ogg', 'audio/mpeg', 'audio/mp3', 'audio/opus'):
+          tmp_link = os.path.join(self.temp_directory, 'tmpAudio')
+          f = open(tmp_link, 'w')
+          f.write(part.get_payload(decode=True))
+          f.close()
+          # get hash for filename
+          f = open(tmp_link, 'r')
+          d = f.read()
+          is_img = d[4:] == '\x89PNG'
+          image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_').replace('"', '_'))
+          imagehash = sha1(d).hexdigest()
+          image_name = image_name_original.split('.')[-1].lower()
+          if image_name in ('jpg', 'png', 'gif', 'bmp', 'webm', 'html', 'php'):
+            image_name = 'fake.and.gay.txt'
+          elif is_img:
+            image_name = imagehash + '.fake_img'
+          else:
+            image_name = imagehash + '.' + image_name
+          out_link = os.path.join(self.output_directory, 'img', image_name)
+          f.close()
+          # copy to out directory with new filename
+          c = open(out_link, 'w')
+          f = open(tmp_link, 'r')
+          c.write(f.read())
+          c.close()
+          f.close()
+          if is_img:
+            thumb_name = 'invalid'
+          else:
+            thumb_name = 'audio'
+          os.remove(tmp_link)
+        elif part.get_content_type().lower() == 'video/webm':
+          tmp_link = os.path.join(self.temp_directory, 'tmpVideo')
+          f = open(tmp_link, 'w')
+          f.write(part.get_payload(decode=True))
+          f.close()
+          # get hash for filename
+          f = open(tmp_link, 'r')
+          d = f.read()
+          is_img = d[4:] == '\x89PNG'
+          image_name_original = self.basicHTMLencode(part.get_filename().replace('/', '_').replace('"', '_'))
+          imagehash = sha1(d).hexdigest()
+          image_name = image_name_original.split('.')[-1].lower()
+          if image_name in ('jpg', 'png', 'gif', 'bmp', 'html', 'php'):
+            image_name = 'fake.and.gay.txt'
+          elif is_img:
+            image_name = imagehash + '.fake_img'
+          else:
+            image_name = imagehash + '.' + image_name
+          out_link = os.path.join(self.output_directory, 'img', image_name)
+          f.close()
+          # copy to out directory with new filename
+          c = open(out_link, 'w')
+          f = open(tmp_link, 'r')
+          c.write(f.read())
+          c.close()
+          f.close()
+          if is_img:
+            thumb_name = 'invalid'
+          else:
+            thumb_name = 'video'
+          os.remove(tmp_link)
         else:
           message += '\n----' + part.get_content_type() + '----\n'
           message += 'invalid content type\n'
@@ -945,6 +1012,7 @@ class main(threading.Thread):
     for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ?', (group_id, threads_per_page * pages_per_board)).fetchall():
       t_engine_mapper_root = dict() 
       root_message_id_hash = sha1(root_row[0]).hexdigest()
+      isvid = False
       if thread_counter == threads_per_page:
         self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
         t_engine_mapper_board = dict()
@@ -973,6 +1041,11 @@ class main(threading.Thread):
           root_thumblink = self.document_file
         elif root_row[7] == 'invalid':
           root_thumblink = self.invalid_file
+        elif root_row[7] == 'audio':
+          root_thumblink = self.audio_file
+        elif root_row[7] == 'video':
+          root_thumblink = self.webm_file
+          isvid = True
         else:
           root_thumblink = root_row[7]
       else:
@@ -998,7 +1071,8 @@ class main(threading.Thread):
       message = self.linker.sub(self.linkit, message)
       message = self.quoter.sub(self.quoteit, message)
       message = self.coder.sub(self.codeit, message)
-      
+      #if isvid:
+      #  message = ('<video src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
       child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], group_id)).fetchone()[0])
       if child_count > 4: missing = child_count - 4
       else: missing = 0
@@ -1023,11 +1097,17 @@ class main(threading.Thread):
       for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
         t_engine_mapper_child = dict()
         article_hash = sha1(child_row[0]).hexdigest()
+        isvid = False
         if child_row[6] != '':
           if child_row[7] == 'invalid':
             child_thumblink = self.invalid_file
           elif child_row[7] == 'document':
             child_thumblink = self.document_file
+          elif child_row[7] == 'audio':
+            child_thumblink = self.audio_file
+          elif child_row[7] == 'video':
+            child_thumblink = self.webm_file
+            isvid = True
           else:
             child_thumblink = child_row[7]
           t_engine_mapper_child['imagelink'] = child_row[6]
@@ -1054,6 +1134,8 @@ class main(threading.Thread):
         message = self.linker.sub(self.linkit, message) 
         message = self.quoter.sub(self.quoteit, message)
         message = self.coder.sub(self.codeit, message)
+        #if isvid:
+        #  message = ('<video src="/img/%s" type="video/webm" controls=controls>no html5 video</video><br />' % child_row[6]) + message
         t_engine_mapper_child['articlehash'] = article_hash[:10]
         t_engine_mapper_child['articlehash_full'] = article_hash
         t_engine_mapper_child['author'] = child_row[1]
@@ -1144,12 +1226,18 @@ class main(threading.Thread):
       return
 
     self.log(self.logger.INFO, 'generating %s/thread-%s.html' % (self.output_directory, root_message_id_hash[:10]))
+    isvid = False
     if root_row[6] != '':
       root_imagelink = root_row[6]
       if root_row[7] == 'invalid':
         root_thumblink = self.invalid_file
       elif root_row[7] == 'document':
         root_thumblink = self.document_file
+      elif root_row[7] == 'audio':
+        root_thumblink = self.audio_file
+      elif root_row[7] == 'video':
+        root_thumblink = self.webm_file
+        isvid = True
       else:
         root_thumblink = root_row[7]
     else:
@@ -1170,6 +1258,8 @@ class main(threading.Thread):
     message = self.linker.sub(self.linkit, root_row[4])
     message = self.quoter.sub(self.quoteit, message)
     message = self.coder.sub(self.codeit, message)
+    #if isvid:
+    #  message = ('<video src="/img/%s" controls=controls type="video/webm">no html5 video</video><br />' % root_row[6]) + message
     t_engine_mappings_root['articlehash'] = root_message_id_hash[:10]
     t_engine_mappings_root['articlehash_full'] = root_message_id_hash
     t_engine_mappings_root['author'] = root_row[1]
@@ -1179,19 +1269,27 @@ class main(threading.Thread):
     t_engine_mappings_root['thumblink'] = root_thumblink
     t_engine_mappings_root['imagename'] = root_row[5]
     t_engine_mappings_root['message'] = message
+    t_engine_mappings_root['frontend'] = self.frontend(root_uid)
     childs = list()
     childs.append('') # FIXME: the fuck is this for?
     
     for child_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid ORDER BY sent ASC', (root_uid,)).fetchall():
       t_engine_mappings_child = dict()
+      isvid = False
       article_hash = sha1(child_row[0]).hexdigest()
       if child_row[6] != '':
         if child_row[7] == 'invalid':
           child_thumblink = self.invalid_file
         elif child_row[7] == 'document':
           child_thumblink = self.document_file
+        elif child_row[7] == 'audio':
+          child_thumblink = self.audio_file
+        elif child_row[7] == 'video':
+          child_thumblink = self.webm_file
+          isvid = True
         else:
           child_thumblink = child_row[7]
+
         t_engine_mappings_child['imagelink'] = child_row[6]
         t_engine_mappings_child['thumblink'] = child_thumblink
         t_engine_mappings_child['imagename'] = child_row[5]
@@ -1214,6 +1312,8 @@ class main(threading.Thread):
       message = self.linker.sub(self.linkit, child_row[4])
       message = self.quoter.sub(self.quoteit, message)
       message = self.coder.sub(self.codeit, message)      
+      #if isvid:
+      #  message = ('<video controls=controls src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
       t_engine_mappings_child['message'] = message
       t_engine_mappings_child['frontend'] = self.frontend(child_row[0])
       if child_row[6] != '':

@@ -19,5 +19,7 @@
 #start_param debug=2
 #start_param title=overchan.i.did.not.read.the.config
 #start_param sync_on_startup=True
+#start_param audio_file=audio.png
+#start_param webm_file=video.png
 
 overchan.*
