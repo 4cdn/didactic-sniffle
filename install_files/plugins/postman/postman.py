@@ -226,12 +226,13 @@ class postman(BaseHTTPRequestHandler):
     failed = True
     if not post_vars:
       failed = False
+      contentType = 'Content-Type' in self.headers and self.headers['Content-Type'] or 'text/plain'
       post_vars = FieldStorage(
         fp=self.rfile,
         headers=self.headers,
         environ={
           'REQUEST_METHOD':'POST',
-          'CONTENT_TYPE':self.headers['Content-Type'],
+          'CONTENT_TYPE': contentType
         }
       )
     frontend = post_vars.getvalue('frontend', '').replace('"', '&quot;')
@@ -330,12 +331,13 @@ class postman(BaseHTTPRequestHandler):
 
   def handleNewArticle(self, post_vars=None):
     if not post_vars:
+      contentType = 'Content-Type' in self.headers and self.headers['Content-Type'] or 'text/plain'
       post_vars = FieldStorage(
         fp=self.rfile,
         headers=self.headers,
         environ={
           'REQUEST_METHOD':'POST',
-          'CONTENT_TYPE':self.headers['Content-Type'],
+          'CONTENT_TYPE': contentType
         }
       )
     if not 'frontend' in post_vars:
