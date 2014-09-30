@@ -1006,7 +1006,7 @@ class main(threading.Thread):
         if missing == 1: post = "post"
         else: post = "posts"
         message += '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
-
+      t_engine_mapper_root['frontend'] = self.frontend(root_row[0])
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
       t_engine_mapper_root['articlehash_full'] = root_message_id_hash
@@ -1060,6 +1060,7 @@ class main(threading.Thread):
         t_engine_mapper_child['subject'] = child_row[2]
         t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
         t_engine_mapper_child['message'] = message
+        t_engine_mapper_child['frontend'] = self.frontend(child_row[0])
         if child_row[6] != '':
           childs.append(self.t_engine_message_pic.substitute(t_engine_mapper_child))
         else:
@@ -1093,6 +1094,31 @@ class main(threading.Thread):
       del pagelist
       del boardlist
       del threads
+
+  def frontend_icon_markup(self, frontend):
+    icons = {
+      'web.overchan.imoutochan' : 'imoutochan.png',
+      'web.overchan.sarah.ano': 'sarah.png',
+      'import.oniichan' : 'oniichan.png' ,
+      'web.overchan.psyops.mil': 'psyops.png',
+      'slamspeech.ano' : 'slamspeech.png',
+      'web.overchan.deliciouscake.ano' : 'dcake.png',
+      'web.overchan.sfor.ano' : 'sfor.png',
+      'web.overchan.lolz' : 'roger.png',
+      'web.overchan.a2ki' : 'a2ki.png',
+    }
+    icon = 'nntp.png'
+    if frontend in icons:
+      icon = icons[frontend]
+    frontend = self.basicHTMLencode(frontend.replace('"',''))
+    return '<img class="frontend_icon" src="/static/%s" title="%s" />' % (icon, frontend)
+
+  def frontend(self, uid):
+    if '@' in uid:
+      frontend = uid.split('@')[1][:-1]
+    else:
+      frontend = 'nntp'
+    return self.frontend_icon_markup(frontend)
 
   def generate_thread(self, root_uid):
     t_engine_mappings_root = dict()
@@ -1189,6 +1215,7 @@ class main(threading.Thread):
       message = self.quoter.sub(self.quoteit, message)
       message = self.coder.sub(self.codeit, message)      
       t_engine_mappings_child['message'] = message
+      t_engine_mappings_child['frontend'] = self.frontend(child_row[0])
       if child_row[6] != '':
         childs.append(self.t_engine_message_pic.substitute(t_engine_mappings_child))
       else:
