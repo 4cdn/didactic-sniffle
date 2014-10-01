@@ -278,7 +278,7 @@ class postman(BaseHTTPRequestHandler):
       self.origin.log(self.origin.logger.WARNING, self.headers)
     passphrase = ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
     #passphrase += ' ' + ''.join([random.choice(self.origin.captcha_alphabet) for i in xrange(6)])
-    b64 = self.origin.captcha_render_b64(passphrase, self.origin.captcha_tiles, self.origin.captcha_font, self.origin.captcha_filter)
+    b64 = self.origin.captcha_render_b64(passphrase, self.origin.captcha_tiles, self.origin.get_captcha_font(), self.origin.captcha_filter)
     if self.origin.captcha_require_cookie:
       cookie = ''.join(random.choice(self.origin.captcha_alphabet) for x in range(32))
       expires, solution_hash = self.origin.captcha_generate(passphrase, self.origin.captcha_secret + cookie)
@@ -742,13 +742,13 @@ class main(threading.Thread):
     self.httpd.captcha_generate = self.captcha_generate
     self.httpd.captcha_verify = self.captcha_verify
     self.httpd.captcha_render_b64 = self.captcha_render_b64
-    self.httpd.captcha_font = ImageFont.truetype('plugins/postman/Vera.ttf', 30)
+    self.httpd.get_captcha_font = self.get_captcha_font
     self.httpd.captcha_filter = ImageFilter.EMBOSS
     self.httpd.captcha_tiles = list()
     self.httpd.qoutefile = 'plugins/postman/quotes.txt'
     for item in os.listdir('plugins/postman/tiles'):
       self.httpd.captcha_tiles.append(Image.open('plugins/postman/tiles/%s' % item))
-    foobar = self.captcha_render_b64('abc', self.httpd.captcha_tiles, self.httpd.captcha_font, self.httpd.captcha_filter)
+    foobar = self.captcha_render_b64('abc', self.httpd.captcha_tiles, self.httpd.get_captcha_font(), self.httpd.captcha_filter)
     del foobar
     f = open('/dev/urandom', 'r')
     self.httpd.captcha_secret = f.read(32)
@@ -797,20 +797,33 @@ class main(threading.Thread):
     if solution_hash != sha256('%s%i%s' % (secret, expires, guess)).hexdigest(): return False
     return True
   
+  def get_captcha_font(self, fontdir='plugins/postman/fonts/' ):
+    """ get random font """
+    font = random.choice(os.listdir(fontdir))
+    font = fontdir+font
+    return ImageFont.truetype(font, random.randint(32, 48) )
+
   def captcha_render_b64(self, guess, tiles, font, filter=None):
+    """ generate captcha """
     #if self.captcha_size is None: size = self.defaultSize
     #img = Image.new("RGB", (256,96))
+    w , h , x , y = 300, 100, 30, 25
+    w += random.randint(4, 50)
+    h += random.randint(4, 50)
+    x += random.randint(4, 50)
+    y += random.randint(4, 50)
     tile = random.choice(tiles)
-    img = Image.new("RGB", (150,46))
-    offset = (random.uniform(0, 1), random.uniform(0, 1))
-    for j in xrange(-1, int(img.size[1] / tile.size[1]) + 1):
-      for i in xrange(-1, int(img.size[0] / tile.size[0]) + 1):
-        dest = (int((offset[0] + i) * tile.size[0]),
-                int((offset[1] + j) * tile.size[1]))
-        img.paste(tile, dest)
+    img = Image.new("RGB", (w,h))
+    for n in range(10):
+      offset = (random.uniform(0, 1), random.uniform(0, 1))
+      for j in xrange(-1, int(img.size[1] / tile.size[1]) + 1):
+        for i in xrange(-1, int(img.size[0] / tile.size[0]) + 1):
+          dest = (int((offset[0] + i) * tile.size[0]),
+                  int((offset[1] + j) * tile.size[1]))
+          img.paste(tile, dest)
     draw = ImageDraw.Draw(img)
     #draw.text((40,20), guess, font=font, fill='white')
-    draw.text((10,5), guess, font=font, fill='black')
+    draw.text((x,y), guess, font=font, fill='black')
     if filter:
       img = img.filter(filter)
     f = cStringIO.StringIO()
