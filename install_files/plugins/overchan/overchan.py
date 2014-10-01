@@ -325,6 +325,34 @@ class main(threading.Thread):
         del something
       except IOError as e:
         self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
+    link = os.path.join(self.output_directory, 'thumbs', self.audio_file)
+    if not os.path.exists(link):
+      try:
+        something = Image.open(os.path.join(self.template_directory, self.audio_file))
+        modifier = float(180) / something.size[0]
+        x = int(something.size[0] * modifier)
+        y = int(something.size[1] * modifier)
+        if not (something.mode == 'RGBA' or something.mode == 'LA'):
+          something = something.convert('RGB')
+        something = something.resize((x,y), Image.ANTIALIAS)
+        something.save(link, optimize=True)
+        del something
+      except IOError as e:
+        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
+    link = os.path.join(self.output_directory, 'thumbs', self.webm_file)
+    if not os.path.exists(link):
+      try:
+        something = Image.open(os.path.join(self.template_directory, self.webm_file))
+        modifier = float(180) / something.size[0]
+        x = int(something.size[0] * modifier)
+        y = int(something.size[1] * modifier)
+        if not (something.mode == 'RGBA' or something.mode == 'LA'):
+          something = something.convert('RGB')
+        something = something.resize((x,y), Image.ANTIALIAS)
+        something.save(link, optimize=True)
+        del something
+      except IOError as e:
+        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
     self.regenerate_boards = list()
     self.regenerate_threads = list()
     self.missing_parents = dict()
