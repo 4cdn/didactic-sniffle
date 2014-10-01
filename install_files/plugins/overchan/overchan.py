@@ -993,9 +993,9 @@ class main(threading.Thread):
       if result.get_content_type().lower() == 'text/plain':
         message += result.get_payload(decode=True)
       else:
-        message += '\n----' + result.get_content_type() + '----\n'
+        message += '\n-----' + result.get_content_type() + '-----\n'
         message += 'invalid content type\n'
-        message += '----' + result.get_content_type() + '----\n\n'
+        message += '-----' + result.get_content_type() + '-----\n\n'
     del result
     message = self.basicHTMLencode(message)
     if self.sqlite.execute('SELECT article_uid FROM articles WHERE article_uid=?', (message_id,)).fetchone():
