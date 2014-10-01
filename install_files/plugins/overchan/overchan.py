@@ -1228,7 +1228,7 @@ class main(threading.Thread):
       frontend = uid.split('@')[1][:-1]
     else:
       frontend = 'nntp'
-    return self.frontend_icon_markup(frontend)
+    return frontend
 
   def generate_thread(self, root_uid):
     t_engine_mappings_root = dict()
