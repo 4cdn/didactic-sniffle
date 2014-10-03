@@ -186,15 +186,6 @@ class main(threading.Thread):
     self.t_engine_signed = string.Template(f.read())
     f.close()
     
-    # make >>post_id links
-    self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
-    # make >quotes
-    self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
-    # Make http:// urls in posts clickable
-    self.clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s|\[|\])]*)")
-    # make code blocks
-    self.coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
-    
     self.upper_table = {'0': '1',
                         '1': '2',
                         '2': '3',
@@ -680,6 +671,22 @@ class main(threading.Thread):
   def codeit(self, rematch):
     return '<div class="code">%s</div>' % rematch.group(1)
 
+  def markup_parser(self, message):
+    # make >>post_id links
+    self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
+    # make >quotes
+    self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
+    # Make http:// urls in posts clickable
+    self.clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s|\[|\])]*)")
+    # make code blocks
+    self.coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
+    # perform parsing
+    message = self.linker.sub(self.linkit, message)
+    message = self.quoter.sub(self.quoteit, message)
+    message = self.clicker.sub(self.clickit, message)
+    message = self.coder.sub(self.codeit, message)
+    return message
+
   def parse_message(self, message_id, fd):
     self.log(self.logger.INFO, 'new message: %s' % message_id)
     hash_message_uid = sha1(message_id).hexdigest()
@@ -1104,10 +1111,7 @@ class main(threading.Thread):
         message = root_row[4][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
       else:
         message = root_row[4]
-      message = self.linker.sub(self.linkit, message)
-      message = self.quoter.sub(self.quoteit, message)
-      message = self.clicker.sub(self.clickit, message)
-      message = self.coder.sub(self.codeit, message)
+      message = self.markup_parser(message)
       #if isvid:
       #  message = ('<video src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
       child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], group_id)).fetchone()[0])
@@ -1168,10 +1172,7 @@ class main(threading.Thread):
           message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
         else:
           message = child_row[4]
-        message = self.linker.sub(self.linkit, message) 
-        message = self.quoter.sub(self.quoteit, message)
-        message = self.clicker.sub(self.clickit, message)
-        message = self.coder.sub(self.codeit, message)
+        message = self.markup_parser(message)
         #if isvid:
         #  message = ('<video src="/img/%s" type="video/webm" controls=controls>no html5 video</video><br />' % child_row[6]) + message
         t_engine_mapper_child['articlehash'] = article_hash[:10]
@@ -1293,10 +1294,7 @@ class main(threading.Thread):
         t_engine_mappings_root['signed'] = ''
     else:
       t_engine_mappings_root['signed'] = ''
-    message = self.linker.sub(self.linkit, root_row[4])
-    message = self.quoter.sub(self.quoteit, message)
-    message = self.clicker.sub(self.clickit, message)
-    message = self.coder.sub(self.codeit, message)
+    message = self.markup_parser(root_row[4])
     #if isvid:
     #  message = ('<video src="/img/%s" controls=controls type="video/webm">no html5 video</video><br />' % root_row[6]) + message
     t_engine_mappings_root['articlehash'] = root_message_id_hash[:10]
@@ -1348,10 +1346,7 @@ class main(threading.Thread):
       t_engine_mappings_child['author'] = child_row[1]
       t_engine_mappings_child['subject'] = child_row[2]
       t_engine_mappings_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
-      message = self.linker.sub(self.linkit, child_row[4])
-      message = self.quoter.sub(self.quoteit, message)
-      message = self.clicker.sub(self.clickit, message)
-      message = self.coder.sub(self.codeit, message)      
+      message = self.markup_parser(child_row[4])
       #if isvid:
       #  message = ('<video controls=controls src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
       t_engine_mappings_child['message'] = message
