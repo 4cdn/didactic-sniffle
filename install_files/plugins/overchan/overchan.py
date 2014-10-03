@@ -668,23 +668,28 @@ class main(threading.Thread):
   def clickit(self, rematch):
     return '<a href="%s%s">%s%s</a>' % (rematch.group(1), rematch.group(2), rematch.group(1), rematch.group(2))
 
-  def codeit(self, rematch):
-    return '<div class="code">%s</div>' % rematch.group(1)
+  def codeit(self, text):
+    return '<div class="code">%s</div>' % text
 
   def markup_parser(self, message):
     # make >>post_id links
-    self.linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
+    linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
     # make >quotes
-    self.quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
+    quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
     # Make http:// urls in posts clickable
-    self.clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s|\[|\])]*)")
+    clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s|\[|\])]*)")
     # make code blocks
-    self.coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
+    coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
+
     # perform parsing
-    message = self.linker.sub(self.linkit, message)
-    message = self.quoter.sub(self.quoteit, message)
-    message = self.clicker.sub(self.clickit, message)
-    message = self.coder.sub(self.codeit, message)
+    if re.search(coder, message):
+      # list indices: 0 - before [code], 1 - inside [code]...[/code], 2 - after [/code]
+      message_parts = re.split(coder, message, maxsplit=1)
+      message = self.markup_parser(message_parts[0]) + self.codeit(message_parts[1]) + self.markup_parser(message_parts[2])
+    else:
+      message = linker.sub(self.linkit, message)
+      message = quoter.sub(self.quoteit, message)
+      message = clicker.sub(self.clickit, message)
     return message
 
   def parse_message(self, message_id, fd):
