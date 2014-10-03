@@ -671,6 +671,9 @@ class main(threading.Thread):
   def codeit(self, text):
     return '<div class="code">%s</div>' % text
 
+  def spoilit(self, rematch):
+    return '<span class="spoiler" onmouseover="this.style.color=\'white\';" onmouseout="this.style.color=\'black\'">%s</span>' % rematch.group(1)
+
   def markup_parser(self, message):
     # make >>post_id links
     linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
@@ -680,6 +683,8 @@ class main(threading.Thread):
     clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s|\[|\])]*)")
     # make code blocks
     coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
+    # make spoilers
+    spoiler = re.compile("%% (?!\s) (.+?) (?!\s) %%", re.VERBOSE)
 
     # perform parsing
     if re.search(coder, message):
@@ -690,6 +695,7 @@ class main(threading.Thread):
       message = linker.sub(self.linkit, message)
       message = quoter.sub(self.quoteit, message)
       message = clicker.sub(self.clickit, message)
+      message = spoiler.sub(self.spoilit, message)
     return message
 
   def parse_message(self, message_id, fd):
