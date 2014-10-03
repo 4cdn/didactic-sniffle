@@ -235,7 +235,12 @@ class postman(BaseHTTPRequestHandler):
           'CONTENT_TYPE': contentType
         }
       )
-    frontend = post_vars.getvalue('frontend', '').replace('"', '&quot;')
+    # someone wants to fuck around
+    if not 'frontend' in post_vars:
+      self.die('frontend not in post_vars')
+      return
+    else:
+      frontend = post_vars.getvalue('frontend', '').replace('"', '&quot;')
     reply = post_vars.getvalue('reply', '').replace('"', '&quot;')
     #if frontend == 'overchan' and reply != '':
     #  # FIXME add ^ allow_reply_bypass to frontend configuration
