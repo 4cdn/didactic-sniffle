@@ -674,6 +674,18 @@ class main(threading.Thread):
   def spoilit(self, rematch):
     return '<span class="spoiler" onmouseover="this.style.color=\'white\';" onmouseout="this.style.color=\'black\'">%s</span>' % rematch.group(1)
 
+  def boldit(self, rematch):
+    return '<b>%s</b>' % rematch.group(1)
+
+  def italit(self, rematch):
+    return '<i>%s</i>' % rematch.group(1)
+
+  def strikeit(self, rematch):
+    return '<strike>%s</strike>' % rematch.group(1)
+
+  def underlineit(self, rematch):
+    return '<span style="border-bottom: 1px solid">%s</span>' % rematch.group(1)
+
   def markup_parser(self, message):
     # make >>post_id links
     linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
@@ -685,6 +697,15 @@ class main(threading.Thread):
     coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
     # make spoilers
     spoiler = re.compile("%% (?!\s) (.+?) (?!\s) %%", re.VERBOSE)
+    # make <b>
+    bolder1 = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) \*\* (?![\s*_]) (.+?) (?<![\s*_]) \*\* (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    bolder2 = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) __ (?![\s*_]) (.+?) (?<![\s*_]) __ (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    # make <i>
+    italer = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) \* (?![\s*_]) (.+?) (?<![\s*_]) \* (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    # make <strike>
+    striker = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_-]) -- (?![\s*_-]) (.+?) (?<![\s*_-]) -- (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_-])", re.VERBOSE)
+    # make underlined text
+    underliner = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) _ (?![\s*_]) (.+?) (?<![\s*_]) _ (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
 
     # perform parsing
     if re.search(coder, message):
@@ -696,6 +717,12 @@ class main(threading.Thread):
       message = quoter.sub(self.quoteit, message)
       message = clicker.sub(self.clickit, message)
       message = spoiler.sub(self.spoilit, message)
+      message = bolder1.sub(self.boldit, message)
+      message = bolder2.sub(self.boldit, message)
+      message = italer.sub(self.italit, message)
+      message = striker.sub(self.strikeit, message)
+      message = underliner.sub(self.underlineit, message)
+
     return message
 
   def parse_message(self, message_id, fd):
