@@ -698,14 +698,14 @@ class main(threading.Thread):
     # make spoilers
     spoiler = re.compile("%% (?!\s) (.+?) (?!\s) %%", re.VERBOSE)
     # make <b>
-    bolder1 = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) \*\* (?![\s*_]) (.+?) (?<![\s*_]) \*\* (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
-    bolder2 = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) __ (?![\s*_]) (.+?) (?<![\s*_]) __ (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    bolder1 = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_/]) \*\* (?![\s*_]) (.+?) (?<![\s*_]) \*\* (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    bolder2 = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_/]) __ (?![\s*_]) (.+?) (?<![\s*_]) __ (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
     # make <i>
-    italer = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) \* (?![\s*_]) (.+?) (?<![\s*_]) \* (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    italer = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_/]) \* (?![\s*_]) (.+?) (?<![\s*_]) \* (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
     # make <strike>
-    striker = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_-]) -- (?![\s*_-]) (.+?) (?<![\s*_-]) -- (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_-])", re.VERBOSE)
+    striker = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_\-/]) -- (?![\s*_\-]) (.+?) (?<![\s*_-]) -- (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_\-])", re.VERBOSE)
     # make underlined text
-    underliner = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_]) _ (?![\s*_]) (.+?) (?<![\s*_]) _ (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
+    underliner = re.compile("(?<![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_/]) _ (?![\s*_]) (.+?) (?<![\s*_]) _ (?![0-9a-zA-Z\x80-\x9f\xe0-\xfc*_])", re.VERBOSE)
 
     # perform parsing
     if re.search(coder, message):
