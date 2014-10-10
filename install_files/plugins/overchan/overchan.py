@@ -692,7 +692,7 @@ class main(threading.Thread):
     # make >quotes
     quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
     # Make http:// urls in posts clickable
-    clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s|\[|\])]*)")
+    clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s\[\]<>)]*)")
     # make code blocks
     coder = re.compile('\[code](?!\[/code])(.+?)\[/code]', re.DOTALL)
     # make spoilers
