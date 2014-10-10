@@ -33,7 +33,7 @@ function quickreply(articlehash, parenthash_full) {
 }
 
 /* highlight some message */
-function highlight(articlehash){
+function highlight(articlehash) {
   /* turn off previos highlights */
 	var cells = document.getElementsByTagName("div");
 	for(var i=0;i<cells.length;i++) if(cells[i].className == "highlight") cells[i].className = "message";
