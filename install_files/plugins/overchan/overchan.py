@@ -660,7 +660,7 @@ class main(threading.Thread):
     # article has a parent
     # FIXME: cache results somehow?
     parent = sha1(parent_id).hexdigest()[:10]
-    return '%s<a href="thread-%s.html#%s">%s</a>' % (rematch.group(1), parent, rematch.group(2), rematch.group(2))
+    return '%s<a onclick="return highlight(\'%s\');" href="thread-%s.html#%s">%s</a>' % (rematch.group(1), rematch.group(2), parent, rematch.group(2), rematch.group(2))
   
   def quoteit(self, rematch):
     return '<span class="quote">%s</span>' % rematch.group(0).rstrip("\r")
@@ -1213,6 +1213,8 @@ class main(threading.Thread):
         message = self.markup_parser(message)
         #if isvid:
         #  message = ('<video src="/img/%s" type="video/webm" controls=controls>no html5 video</video><br />' % child_row[6]) + message
+        t_engine_mapper_child['parenthash'] = root_message_id_hash[:10]
+        t_engine_mapper_child['parenthash_full'] = root_message_id_hash
         t_engine_mapper_child['articlehash'] = article_hash[:10]
         t_engine_mapper_child['articlehash_full'] = article_hash
         t_engine_mapper_child['author'] = child_row[1]
@@ -1379,6 +1381,8 @@ class main(threading.Thread):
           t_engine_mappings_child['signed'] = ''
       else:
         t_engine_mappings_child['signed'] = ''
+      t_engine_mappings_child['parenthash'] = root_message_id_hash[:10]
+      t_engine_mappings_child['parenthash_full'] = root_message_id_hash
       t_engine_mappings_child['articlehash'] = article_hash[:10]
       t_engine_mappings_child['articlehash_full'] = article_hash
       t_engine_mappings_child['author'] = child_row[1]
