@@ -690,7 +690,7 @@ class main(threading.Thread):
     # make >>post_id links
     linker = re.compile("(&gt;&gt;)([0-9a-f]{10})")
     # make >quotes
-    quoter = re.compile("^&gt;(?!&gt;).*", re.MULTILINE)
+    quoter = re.compile("^&gt;(?!&gt;[0-9a-f]{10}).*", re.MULTILINE)
     # Make http:// urls in posts clickable
     clicker = re.compile("(http://|https://|ftp://|mailto:|news:|irc:)([^(\s\[\]<>)]*)")
     # make code blocks
