@@ -382,7 +382,7 @@ class postman(BaseHTTPRequestHandler):
       if not found:
         self.die('{0} not in allowed_boards'.format(group))
         return
-    redirect_duration = 2
+    redirect_duration = 4
     if not 'allowed_files' in self.origin.frontends[frontend]:
       file_name = ''
     else:
