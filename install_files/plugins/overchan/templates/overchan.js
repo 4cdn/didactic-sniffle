@@ -29,6 +29,9 @@ function quickreply(articlehash, parenthash_full) {
     nt.value = 'reply to thread'
   }
   insert('>>' + articlehash + '\n');
+  if (quote != '') {
+    insert('>' + quote + '\n');
+  }
   return false;
 }
 
@@ -45,3 +48,19 @@ function highlight(articlehash) {
   return false;
 }
 
+/* get text selected by user */
+function getSelectionText() {
+  var text = '';
+  if (window.getSelection) {
+    text = window.getSelection().toString();
+  } else if (document.selection && document.selection.type != 'Control') {
+    text = document.selection.createRange().text;
+  }
+  return text;
+}
+
+/* set global variable with selected text */
+function get_quote() {
+  quote = getSelectionText();
+  return true;
+}
