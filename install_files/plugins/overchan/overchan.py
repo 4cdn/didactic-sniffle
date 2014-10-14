@@ -656,11 +656,11 @@ class main(threading.Thread):
     parent_id = parent_row[0]
     if parent_id == "":
       # article is root post
-      return '%s<a href="thread-%s.html">%s</a>' % (rematch.group(1), rematch.group(2), rematch.group(2))
+      return '<a href="thread-%s.html">%s%s</a>' % (rematch.group(2), rematch.group(1), rematch.group(2))
     # article has a parent
     # FIXME: cache results somehow?
     parent = sha1(parent_id).hexdigest()[:10]
-    return '%s<a onclick="return highlight(\'%s\');" href="thread-%s.html#%s">%s</a>' % (rematch.group(1), rematch.group(2), parent, rematch.group(2), rematch.group(2))
+    return '<a onclick="return highlight(\'%s\');" href="thread-%s.html#%s">%s%s</a>' % (rematch.group(2), rematch.group(2), parent, rematch.group(1), rematch.group(2))
   
   def quoteit(self, rematch):
     return '<span class="quote">%s</span>' % rematch.group(0).rstrip("\r")
