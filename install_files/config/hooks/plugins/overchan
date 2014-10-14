@@ -19,6 +19,9 @@
 #start_param debug=2
 #start_param title=overchan.i.did.not.read.the.config
 #start_param sync_on_startup=True
+#start_param enable_archive=True
+#start_param archive_threads_per_page=500
+#start_param archive_pages_per_board=20
 #start_param audio_file=audio.png
 #start_param webm_file=video.png
 
