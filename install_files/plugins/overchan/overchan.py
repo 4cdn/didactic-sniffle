@@ -178,6 +178,23 @@ class main(threading.Thread):
       )
     )
     f.close
+    f = codecs.open(os.path.join(self.template_directory, 'index.tmpl'), "r", "utf-8")
+    self.t_engine_index = string.Template(
+      string.Template(f.read()).safe_substitute(
+        title=self.html_title
+      )
+    )
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'menu.tmpl'), "r", "utf-8")
+    self.t_engine_menu = string.Template(
+      string.Template(f.read()).safe_substitute(
+        title=self.html_title
+      )
+    )
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'menu_entry.tmpl'), "r", "utf-8")
+    self.t_engine_menu_entry = string.Template(f.read())
+    f.close()
     f = codecs.open(os.path.join(self.template_directory, 'overview.tmpl'), "r", "utf-8")
     self.t_engine_overview = string.Template(
       string.Template(f.read()).safe_substitute(
@@ -416,6 +433,9 @@ class main(threading.Thread):
       if thread_row[0] not in self.regenerate_threads:
         self.regenerate_threads.append(thread_row[0])
 
+    # index generation happens only at startup
+    self.generate_index()
+
   def shutdown(self):
     self.running = False
 
@@ -632,6 +652,8 @@ class main(threading.Thread):
           regen_overview = True
         if regen_overview:
           self.generate_overview()
+          # generate menu.html simultaneously with overview
+          self.generate_menu()
           regen_overview = False
         if got_control:
           self.sqlite_conn.commit()
@@ -1595,7 +1617,28 @@ class main(threading.Thread):
     f.close()
     #del childs
     #del boardlist
-    
+
+  def generate_index(self):
+    self.log(self.logger.INFO, 'generating %s/index.html' % self.output_directory)
+    f = codecs.open(os.path.join(self.output_directory, 'index.html'), 'w', 'UTF-8')
+    f.write(self.t_engine_index.substitute())
+    f.close()
+
+  def generate_menu(self):
+    self.log(self.logger.INFO, 'generating %s/menu.html' % self.output_directory)
+    t_engine_mappings_menu = dict()
+    menu_entries = list()
+    menu_entries.append('<li><a href="index.html" target="_top">Main</a></li><br />')
+    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+      current_group_name_encoded = self.basicHTMLencode(current_group_name)
+      menu_entries.append(self.t_engine_menu_entry.substitute(group_name=current_group_name, group_name_encoded=current_group_name_encoded))
+    t_engine_mappings_menu['menu_entries'] = ''.join(menu_entries)
+
+    f = codecs.open(os.path.join(self.output_directory, 'menu.html'), 'w', 'UTF-8')
+    f.write(self.t_engine_menu.substitute(t_engine_mappings_menu))
+    f.close()
+
   def generate_overview(self):
     self.log(self.logger.INFO, 'generating %s/overview.html' % self.output_directory)
     t_engine_mappings_overview = dict()
