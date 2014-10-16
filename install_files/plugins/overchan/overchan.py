@@ -101,6 +101,11 @@ class main(threading.Thread):
       try:    self.enable_archive = bool(args['enable_archive'])
       except: pass
 
+    self.enable_recent = True
+    if 'enable_recent' in args:
+      try:    self.enable_recent = bool(args['enable_recent'])
+      except: pass
+
     self.archive_threads_per_page = 500
     if 'archive_threads_per_page' in args:
       try:    self.archive_threads_per_page = int(args['archive_threads_per_page'])
@@ -164,6 +169,14 @@ class main(threading.Thread):
     # template_engines
     f = codecs.open(os.path.join(self.template_directory, 'board.tmpl'), "r", "utf-8")
     self.t_engine_board = string.Template(
+      string.Template(f.read()).safe_substitute(
+        help=self.template_help,
+        title=self.html_title
+      )
+    )
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'board_recent.tmpl'), "r", "utf-8")
+    self.t_engine_board_recent = string.Template(
       string.Template(f.read()).safe_substitute(
         help=self.template_help,
         title=self.html_title
@@ -1311,6 +1324,8 @@ class main(threading.Thread):
       del threads
     if generate_archive == True:
       self.generate_archive(group_id)
+    if self.enable_recent == True:
+      self.generate_recent(group_id)
 
   def generate_archive(self, group_id):
     # Generate board list on top of page
@@ -1448,6 +1463,160 @@ class main(threading.Thread):
       del pagelist
       del boardlist
       del threads
+
+  def generate_recent(self, group_id):
+    # FIXME: cache board_name, _unquoted, _full
+    full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
+    full_board_name = self.basicHTMLencode(full_board_name_unquoted)
+    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
+    board_name = full_board_name.split('.', 1)[1]
+    boardlist = list()
+    # FIXME cache group list html globally like censor_httpd_navigation
+    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
+      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+      current_group_name_encoded = self.basicHTMLencode(current_group_name)
+      boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
+    boardlist[-1] = boardlist[-1][:-1]
+    boardlist = ''.join(boardlist)
+
+    threads = list()
+
+    # get only freshly updated threads
+    timestamp = int(time.time()) - 3600*24
+    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) AND last_update > ? ORDER BY last_update DESC', (group_id, timestamp)).fetchall():
+      t_engine_mapper_root = dict()
+      root_message_id_hash = sha1(root_row[0]).hexdigest()
+      isvid = False
+      if root_row[6] != '':
+        root_imagelink = root_row[6]
+        if root_row[7] == 'document':
+          root_thumblink = self.document_file
+        elif root_row[7] == 'invalid':
+          root_thumblink = self.invalid_file
+        elif root_row[7] == 'audio':
+          root_thumblink = self.audio_file
+        elif root_row[7] == 'video':
+          root_thumblink = self.webm_file
+          isvid = True
+        else:
+          root_thumblink = root_row[7]
+      else:
+        root_imagelink = self.no_file
+        root_thumblink = self.no_file
+      if root_row[8]:
+        if root_row[8] != '':
+          t_engine_mapper_root['signed'] = self.t_engine_signed.substitute(
+            articlehash=root_message_id_hash[:10],
+            pubkey=root_row[8],
+            pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
+          )
+        else:
+          t_engine_mapper_root['signed'] = ''
+      else:
+        t_engine_mapper_root['signed'] = ''
+      if len(root_row[4].split('\n')) > 20:
+        message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      elif len(root_row[4]) > 1000:
+        message = root_row[4][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      else:
+        message = root_row[4]
+      message = self.markup_parser(message)
+      #if isvid:
+      #  message = ('<video src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
+      child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], group_id)).fetchone()[0])
+      if child_count > 4: missing = child_count - 4
+      else: missing = 0
+      if missing > 0:
+        if missing == 1: post = "post"
+        else: post = "posts"
+        message += '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
+      t_engine_mapper_root['frontend'] = self.frontend(root_row[0])
+      t_engine_mapper_root['message'] = message
+      t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
+      t_engine_mapper_root['articlehash_full'] = root_message_id_hash
+      t_engine_mapper_root['author'] = root_row[1]
+      t_engine_mapper_root['subject'] = root_row[2]
+      t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
+      t_engine_mapper_root['imagelink'] = root_imagelink
+      t_engine_mapper_root['thumblink'] = root_thumblink
+      t_engine_mapper_root['imagename'] =  root_row[5]
+
+      childs = list()
+      childs.append('') # FIXME: the fuck is this for?
+
+      for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
+        t_engine_mapper_child = dict()
+        article_hash = sha1(child_row[0]).hexdigest()
+        isvid = False
+        if child_row[6] != '':
+          if child_row[7] == 'invalid':
+            child_thumblink = self.invalid_file
+          elif child_row[7] == 'document':
+            child_thumblink = self.document_file
+          elif child_row[7] == 'audio':
+            child_thumblink = self.audio_file
+          elif child_row[7] == 'video':
+            child_thumblink = self.webm_file
+            isvid = True
+          else:
+            child_thumblink = child_row[7]
+          t_engine_mapper_child['imagelink'] = child_row[6]
+          t_engine_mapper_child['thumblink'] = child_thumblink
+          t_engine_mapper_child['imagename'] = child_row[5]
+        if child_row[8]:
+          if child_row[8] != '':
+            t_engine_mapper_child['signed'] = self.t_engine_signed.substitute(
+              articlehash=article_hash[:10],
+              pubkey=child_row[8],
+              pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
+            )
+          else:
+            t_engine_mapper_child['signed'] = ''
+        else:
+          t_engine_mapper_child['signed'] = ''
+
+        if len(child_row[4].split('\n')) > 20:
+          message = '\n'.join(child_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
+        elif len(child_row[4]) > 1000:
+          message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
+        else:
+          message = child_row[4]
+        message = self.markup_parser(message)
+        #if isvid:
+        #  message = ('<video src="/img/%s" type="video/webm" controls=controls>no html5 video</video><br />' % child_row[6]) + message
+        t_engine_mapper_child['parenthash'] = root_message_id_hash[:10]
+        t_engine_mapper_child['parenthash_full'] = root_message_id_hash
+        t_engine_mapper_child['articlehash'] = article_hash[:10]
+        t_engine_mapper_child['articlehash_full'] = article_hash
+        t_engine_mapper_child['author'] = child_row[1]
+        t_engine_mapper_child['subject'] = child_row[2]
+        t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
+        t_engine_mapper_child['message'] = message
+        t_engine_mapper_child['frontend'] = self.frontend(child_row[0])
+        if child_row[6] != '':
+          childs.append(self.t_engine_message_pic.substitute(t_engine_mapper_child))
+        else:
+          childs.append(self.t_engine_message_nopic.substitute(t_engine_mapper_child))
+
+      threads.append(
+        self.t_engine_board_threads.substitute(
+          message_root=self.t_engine_message_root.substitute(t_engine_mapper_root),
+          message_childs=''.join(childs)
+        )
+      )
+      del childs
+    self.log(self.logger.INFO, 'generating %s/%s-recent.html' % (self.output_directory, board_name_unquoted))
+    t_engine_mapper_board_recent = dict()
+    t_engine_mapper_board_recent['threads'] = ''.join(threads)
+    t_engine_mapper_board_recent['boardlist'] = boardlist
+    t_engine_mapper_board_recent['full_board'] = full_board_name_unquoted
+    t_engine_mapper_board_recent['board'] = board_name
+    t_engine_mapper_board_recent['target'] =  "{0}-recent.html".format(board_name_unquoted)
+    f = codecs.open(os.path.join(self.output_directory, '{0}-recent.html'.format(board_name_unquoted)), 'w', 'UTF-8')
+    f.write(self.t_engine_board_recent.substitute(t_engine_mapper_board_recent))
+    f.close()
+    del boardlist
+    del threads
 
   def frontend_icon_markup(self, frontend):
     icons = {
