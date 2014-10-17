@@ -1796,12 +1796,16 @@ class main(threading.Thread):
   def generate_menu(self):
     self.log(self.logger.INFO, 'generating %s/menu.html' % self.output_directory)
     t_engine_mappings_menu = dict()
+    t_engine_mappings_menu_entry = dict()
     menu_entries = list()
-    menu_entries.append('<li><a href="index.html" target="_top">Main</a></li><br />')
+    menu_entries.append('<li><a href="index.html" target="_top">Main</a></li><br />\n')
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
-      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
-      current_group_name_encoded = self.basicHTMLencode(current_group_name)
-      menu_entries.append(self.t_engine_menu_entry.substitute(group_name=current_group_name, group_name_encoded=current_group_name_encoded))
+      t_engine_mappings_menu_entry['group_name'] = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
+      t_engine_mappings_menu_entry['group_name_encoded'] = self.basicHTMLencode(t_engine_mappings_menu_entry['group_name'])
+      # get fresh posts count
+      timestamp = int(time.time()) - 3600*24
+      t_engine_mappings_menu_entry['postcount'] = self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE group_id = ? AND sent > ?', (group_row[1], timestamp)).fetchone()[0]
+      menu_entries.append(self.t_engine_menu_entry.substitute(t_engine_mappings_menu_entry))
     t_engine_mappings_menu['menu_entries'] = ''.join(menu_entries)
 
     f = codecs.open(os.path.join(self.output_directory, 'menu.html'), 'w', 'UTF-8')
