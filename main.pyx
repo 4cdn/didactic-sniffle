@@ -1,7 +1,8 @@
 #!/usr/bin/python
+
+import os
 import time
 import signal
-import os
 import threading
 import platform
 
@@ -47,6 +48,8 @@ else:
   exit(1)
 
 srnd = SRNd.SRNd(logger)
+fd = os.open(srnd.watching(), os.O_RDONLY | os.O_NONBLOCK)
+
 srnd.start()
 terminate = False
 try:
@@ -56,15 +59,13 @@ try:
   srnd.dropper.handler_progress_incoming(None, None)
 except KeyboardInterrupt:
   terminate = True
-# handle fcntl signals after dropper already started
-fd = os.open(srnd.watching(), os.O_RDONLY | os.O_NONBLOCK)
+
 if bsd:
   watching = (select.kevent(fd, filter=select.KQ_FILTER_VNODE, flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR, fflags=select.KQ_NOTE_WRITE),)
 else:
   signal.signal(signal.SIGIO, srnd.dropper.handler_progress_incoming)
   fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
   fcntl.fcntl(fd, fcntl.F_NOTIFY, fcntl.DN_MODIFY | fcntl.DN_CREATE | fcntl.DN_MULTISHOT)
-
 signal.signal(signal.SIGHUP, srnd.update_hooks_outfeeds_plugins)
 
 try:
@@ -81,10 +82,11 @@ except KeyboardInterrupt:
 log(logger.INFO, 'shutting down..')
 srnd.shutdown()
 for thread in threading.enumerate():
-  #print "joining ", thread
-  try:
-    thread.join()
+  if thread.name == 'logger': continue
+  try: thread.join()
   except RuntimeError as e:
     pass
+logger.running = False
+logger.join()
 log(logger.INFO, 'bye')
 exit(0)

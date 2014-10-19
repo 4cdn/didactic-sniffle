@@ -500,11 +500,11 @@ class postman(BaseHTTPRequestHandler):
       link = os.path.join('incoming', 'tmp', boundary)
     f = open(link, 'w')
     if file_name == '':
-      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage))
+      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage).replace('\r', ''))
     else:
-      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage))
+      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage).replace('\r', ''))
       if 'hash' in post_vars:
-        f.write(post_vars.getvalue('file_b64', ''))
+        f.write(post_vars.getvalue('file_b64', '').replace('\r', ''))
       else:
         base64.encode(post_vars['file'].file, f)
       f.write('--{0}--\n'.format(boundary))
@@ -751,6 +751,8 @@ class main(threading.Thread):
     self.httpd.captcha_filter = ImageFilter.EMBOSS
     self.httpd.captcha_tiles = list()
     self.httpd.qoutefile = 'plugins/postman/quotes.txt'
+    self.httpd.captcha_backlog = list()
+    self.httpd.captcha_backlog_maxlen = 100
     for item in os.listdir('plugins/postman/tiles'):
       self.httpd.captcha_tiles.append(Image.open('plugins/postman/tiles/%s' % item))
     foobar = self.captcha_render_b64('abc', self.httpd.captcha_tiles, self.httpd.get_captcha_font(), self.httpd.captcha_filter)
@@ -788,6 +790,21 @@ class main(threading.Thread):
     else: solution_hash = sha256('%s%i%s' % (secret, expires, text)).hexdigest()
     return (expires, solution_hash)
 
+  def captcha_check_backlog(self, expires, solution_hash):
+    insert_at = len(self.httpd.captcha_backlog)
+    for index, solution in enumerate(self.httpd.captcha_backlog):
+      if expires == solution[0] and solution_hash == solution[1]:
+        self.log(self.logger.WARNING, "captcha replay detected: %s" % solution_hash)
+        return False
+      if solution[0] < expires:
+        insert_at = index
+        break
+    if insert_at != self.httpd.captcha_backlog_maxlen:
+      self.httpd.captcha_backlog.insert(insert_at, (expires, solution_hash))
+      if len(self.httpd.captcha_backlog) > self.httpd.captcha_backlog_maxlen:
+        self.httpd.captcha_backlog.pop()
+    return True
+
   def captcha_verify(self, expires, solution_hash, guess, secret):
     try: expires = int(expires)
     except: return False
@@ -795,12 +812,12 @@ class main(threading.Thread):
       return False
     if not expires % 3:
       if solution_hash != sha256('%s%s%i' % (guess, secret, expires)).hexdigest(): return False
-      return True
+      return self.captcha_check_backlog(expires, solution_hash)
     if expires % 2:
       if solution_hash != sha256('%i%s%s' % (expires, guess, secret)).hexdigest(): return False
-      return True
+      return self.captcha_check_backlog(expires, solution_hash)
     if solution_hash != sha256('%s%i%s' % (secret, expires, guess)).hexdigest(): return False
-    return True
+    return self.captcha_check_backlog(expires, solution_hash)
   
   def get_captcha_font(self, fontdir='plugins/postman/fonts/' ):
     """ get random font """

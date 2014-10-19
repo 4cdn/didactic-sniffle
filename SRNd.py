@@ -9,6 +9,8 @@ import sqlite3
 import random
 from distutils.dir_util import copy_tree
 import traceback
+import select
+import json
 
 import dropper
 import feed
@@ -30,7 +32,13 @@ class SRNd(threading.Thread):
     self.log(self.logger.WARNING,  'srnd test logging with WARNING')
     self.log(self.logger.ERROR,    'srnd test logging with ERROR')
     self.log(self.logger.CRITICAL, 'srnd test logging with CRITICAL')
-    
+
+    try:
+      self.stats_ramfile = open('/proc/self/statm', 'r')
+    except Exception as e:
+      self.log(self.logger.WARNING, 'can\'t open ram stat file at /proc/self/statm: %s' % e)
+      self.stats_ramfile = None
+
     # create some directories
     for directory in ('filesystem', 'outfeeds', 'plugins'):
       dir = os.path.join(self.data_dir, 'config', 'hooks', directory)
@@ -525,10 +533,94 @@ class SRNd(threading.Thread):
     self.update_plugins()
     self.update_hooks()
 
-  #def log(self, message, debuglevel):
-  #  if self.debug >= debuglevel:
-  #    for line in message.split("\n"):
-  #      print "[%s] %s" % ("SRNd", line.rstrip("\r\n"))
+  def encode_big_endian(self, number, length):
+    if number >= 256**length:
+      raise OverflowError("%i can't be represented in %i bytes." % (number, length))
+    data = b""
+    for i in range(0, length):
+      data += chr(number >> (8*(length-1-i)))
+      number = number - (ord(data[-1]) << (8*(length -1 -i)))
+    return data
+
+  def decode_big_endian(self, data, length):
+    if len(data) < length:
+      raise IndexError("data length %i lower than given length of %i." % (len(data), length))
+    cur_len = 0
+    for i in range(0, length):
+      cur_len |= ord(data[i]) << (8*(length-1-i))
+    return cur_len
+
+  def ctl_socket_send_data(self, fd, data):
+    data = json.dumps(data)
+    data = self.encode_big_endian(len(data), 4) + data
+    length = os.write(fd, data)
+    while length != len(data):
+      length += os.write(fd, data[length:])
+
+  def ctl_socket_handler_logger(self, data, fd):
+    if data["data"] == "off" or data["data"] == "none":
+      return self.logger.remove_target(self.ctl_socket_clients[fd][1])
+    elif data["data"] == "on":
+      data["data"] = 'all'
+    return self.logger.add_target(self.ctl_socket_clients[fd][1], loglevel=data["data"].split(' '), json_framing_4=True)
+
+  def ctl_socket_handler_stats(self, data, fd):
+    if not 'stats' in self.__dict__:
+      self.stats = { "start_up_timestamp": self.start_up_timestamp }
+      self.stats_last_update = 0
+      self.ram_usage = 0
+      if 'SC_PAGESIZE' in os.sysconf_names:
+        self.stats_pagesize = os.sysconf('SC_PAGESIZE')
+      elif 'SC_PAGE_SIZE' in os.sysconf_names:
+        self.stats_pagesize = os.sysconf('SC_PAGE_SIZE')
+      elif '_SC_PAGESIZE' in os.sysconf_names:
+        self.stats_pagesize = os.sysconf('_SC_PAGESIZE')
+      else:
+        self.stats_pagesize = 4096
+    self.stats["infeeds"]  = sum(1 for x in self.feeds if x.startswith('infeed-'))
+    self.stats["outfeeds"] = sum(1 for x in self.feeds if x.startswith('outfeed-'))
+    self.stats["plugins"]  = len(self.plugins)
+    if time.time() - self.stats_last_update > 5:
+      if self.stats_ramfile != None:
+        self.stats_ramfile.seek(0)
+        self.ram_usage = int(self.stats_ramfile.read().split(' ')[1]) * self.stats_pagesize
+      st = os.statvfs(os.getcwd())
+      self.stats["groups"]    = os.stat('groups').st_nlink - 2
+      self.stats["articles"]  = sum(1 for x in os.listdir('articles')) - os.stat('articles').st_nlink + 2
+      self.stats["cpu"]       = 15
+      self.stats["ram"]       = self.ram_usage
+      self.stats["disk_free"] = st.f_bavail * st.f_frsize
+      self.stats["disk_used"] = (st.f_blocks - st.f_bfree) * st.f_frsize
+      self.stats_last_update = time.time()
+    return self.stats
+
+  def ctl_socket_handler_status(self, data, fd):
+    if not data["data"]:
+      return "all fine"
+    ret = dict()
+    if data["data"] == "feeds":
+      infeeds = dict()
+      for name in self.feeds:
+        if name.startswith("outfeed-"):
+          ret[name[8:]] = {
+            "state": self.feeds[name].state,
+            "queue": self.feeds[name].qsize
+          }
+        else:
+          infeeds[name[7:]] = {
+            "state": self.feeds[name].state,
+            "queue": self.feeds[name].qsize
+          }
+      return { "infeeds": infeeds, "outfeeds": ret }
+    if data["data"] == "plugins":
+      for name in self.plugins:
+        ret[name] = {
+          #"queue": self.plugins[name].qsize
+        }
+      return { "active": ret }
+    if data["data"] == "hooks":
+      return { "blacklist": self.hook_blacklist, "whitelist": self.hooks }
+    return "obviously all fine in %s" % str(data["data"])
 
   def run(self):
     self.running = True
@@ -619,24 +711,109 @@ class SRNd(threading.Thread):
     #      self.feeds[name].add_article(item)
 
     self.dropper.start()
+
+    # setup admin control socket
+    # FIXME: add path of linux socket to SRNd.conf
+    s_addr = 'control.socket'
+    try:
+      os.unlink(s_addr)
+    except OSError:
+      if os.path.exists(s_addr):
+        raise
+    ctl_socket_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    ctl_socket_server.bind(s_addr)
+    ctl_socket_server.listen(10)
+    ctl_socket_server.setblocking(0)
+    os.chmod(s_addr, 0o660)
+
+    poller = select.poll()
+    poller.register(self.socket.fileno(), select.POLLIN)
+    poller.register(ctl_socket_server.fileno(), select.POLLIN)
+    self.poller = poller
+
+    self.ctl_socket_clients = dict()
+    self.ctl_socket_handlers = dict()
+    self.ctl_socket_handlers["status"] = self.ctl_socket_handler_status
+    self.ctl_socket_handlers["log"] = self.ctl_socket_handler_logger
+    self.ctl_socket_handlers["stats"] = self.ctl_socket_handler_stats
+
+
+    self.start_up_timestamp = int(time.time())
     while self.running:
-      try:
-        con = self.socket.accept()
-        name = 'infeed-{0}-{1}'.format(con[1][0], con[1][1])
-        if name not in self.feeds:
-          self.feeds[name] = feed.feed(self, self.logger, connection=con, debug=self.infeed_debug)
-          self.feeds[name].start()
-        else:
-          self.log(self.logger.WARNING, 'got connection from %s but its still in feeds. wtf?' % name)
-      except socket.error as e:
-        if e.errno == 22:
-          break
-        elif e.errno == 4:
-          # system call interrupted
+      result = poller.poll(-1)
+      for fd, mask in result:
+        if fd == self.socket.fileno():
+          try:
+            con = self.socket.accept()
+            name = 'infeed-{0}-{1}'.format(con[1][0], con[1][1])
+            if name not in self.feeds:
+              self.feeds[name] = feed.feed(self, self.logger, connection=con, debug=self.infeed_debug)
+              self.feeds[name].start()
+            else:
+              self.log(self.logger.WARNING, 'got connection from %s but its still in feeds. wtf?' % name)
+          except socket.error as e:
+            if   e.errno == 22: break      # wtf is this? add comments or use STATIC_VARS instead of strange numbers
+            elif e.errno ==  4: continue   # system call interrupted
+            else:               raise e
+          continue
+        elif fd == ctl_socket_server.fileno():
+          con, addr = ctl_socket_server.accept()
+          con.setblocking(0)
+          poller.register(con.fileno(), select.POLLIN)
+          self.ctl_socket_clients[con.fileno()] = (con, os.fdopen(con.fileno(), 'w', 1))
           continue
         else:
-          raise e
+          try:
+            try: data = os.read(fd, 4)
+            except: data = ''
+            if len(data) < 4:
+              self.terminate_ctl_socket_connection(fd)
+              continue
+            length = self.decode_big_endian(data, 4)
+            data = os.read(fd, length)
+            if len(data) != length:
+              self.terminate_ctl_socket_connection(fd)
+              continue
+            try: data = json.loads(data)
+            except Exception as e:
+              self.log(self.logger.WARNING, "failed to decode json data: %s" % e)
+              continue
+            self.log(self.logger.DEBUG, "got something to read from control socket at fd %i: %s" % (fd, data))
+            if not "command" in data:
+              self.ctl_socket_send_data(fd, { "type": "response", "status": "failed", "data": "no command given"})
+              continue
+            if not "data" in data:
+              data["data"] = ''
+            if data["command"] in self.ctl_socket_handlers:
+              try: self.ctl_socket_send_data(fd, { "type": "response", "status": "success", "command": data["command"], "args": data["data"], "data": self.ctl_socket_handlers[data["command"]](data, fd)})
+              except Exception as e:
+                try:
+                  self.ctl_socket_send_data(fd, { "type": "response", "status": "failed", "command": data["command"], "args": data["data"], "data": "internal SRNd handler returned exception: %s" % e })
+                except Exception as e1:
+                  self.log(self.logger.INFO, "can't send exception message to control socket connection using fd %i: %s, original exception was %s" % (fd, e1, e))
+                  self.terminate_ctl_socket_connection(fd)
+              continue
+            self.ctl_socket_send_data(fd, { "type": "response", "status": "failed", "command": data["command"], "args": data["data"], "data": "no handler for given command '%s'" % data["command"] })
+          except Exception as e:
+            self.log(self.logger.INFO, "unhandled exception while processing control socket request using fd %i: %s" % (fd, e))
+            self.terminate_ctl_socket_connection(fd)
+
+    ctl_socket_server.shutdown(socket.SHUT_RDWR)
+    ctl_socket_server.close()
     self.socket.close()
+
+  def terminate_ctl_socket_connection(self, fd):
+    self.log(self.logger.INFO, "connection at control socket fd %i closed" % fd)
+    try: self.ctl_socket_clients[fd][0].shutdown(socket.SHUT_RDWR)
+    except: pass
+    try: self.ctl_socket_clients[fd][1].close()
+    except Exception as e: print "close of fdopened file failed: %s" % e
+    try: self.ctl_socket_clients[fd][0].close()
+    except Exception as e: print "close of socket failed: %s" % e
+    self.poller.unregister(fd)
+    try: self.logger.remove_target(self.ctl_socket_clients[fd][1])
+    except: pass
+    del self.ctl_socket_clients[fd]
 
   def terminate_feed(self, name):
     if name in self.feeds:
@@ -667,4 +844,3 @@ class SRNd(threading.Thread):
       if name in self.feeds:
         self.feeds[name].shutdown()
     self.log(self.logger.INFO, 'waiting for feeds to shut down..')
-    self.logger.running = False
