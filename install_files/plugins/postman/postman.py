@@ -160,26 +160,7 @@ class postman(BaseHTTPRequestHandler):
     return
 
   def get_random_quote(self):
-    quotes = (
-      '''<i>"Being stupid for no reason is very human-like. I will continue to spam."</i> <b>Spammer-kun</b>''',
-      '''<i>"I bet the jews did this..."</i> <b>wowaname</b>''',
-      '''<i>"Put a Donk on it."</i> <b>Krane</b>''',
-      '''<i>"All You're Base are belong to us."</i> <b>Eric Schmit</b>''',
-      '''<i>"I was just pretending to be retarded!!"</i> <b>Anonymous</b>''',
-      '''<i>"Sometimes I wish I didn't have a diaper fetish."</i> <b>wowaname</b>''',
-      '''<i>"DOES. HE. LOOK. LIKE. A BITCH?"</i> <b>Jesus Christ our Lord And Savior</b>''',
-      '''<i>"ENGLISH MOTHERFUCKA DO YOU SPEAK IT?"</i> <b>Jesus Christ our Lord And Savior</b>''',
-      '''<i>"We are watching you masturbate"</i> <b>NSA Internet Anonymity Specialist and Privacy Expert</b>''',
-      '''<i>"I want to eat apples and bananas"</i> <b>Cookie Monster</b>''',
-      '''<i>"Ponies are red, Twilight is blue, I have a boner, and so do you</i> <b>TriPh0rce, Maintainer of All You're Wiki</b>''',
-      '''<i>"C++ is a decent language and there is almost no reason to use C in the modern age"</i> <b>psi</b>''',
-      '''<i>"windows is full of aids"</i> <b>wowaname</b>'''
-    )
-    quotefile = 'plugins/postman/quotes.txt'
-    if os.path.exists(quotefile):
-      with open(quotefile) as f:
-        quotes = [q for q in f]
-    return random.choice(quotes)
+    return random.choice(self.origin.quotes)
 
   def failCaptcha(self, vars):
     msg = self.get_random_quote()
@@ -750,7 +731,6 @@ class main(threading.Thread):
     self.httpd.get_captcha_font = self.get_captcha_font
     self.httpd.captcha_filter = ImageFilter.EMBOSS
     self.httpd.captcha_tiles = list()
-    self.httpd.qoutefile = 'plugins/postman/quotes.txt'
     self.httpd.captcha_backlog = list()
     self.httpd.captcha_backlog_maxlen = 100
     for item in os.listdir('plugins/postman/tiles'):
@@ -760,6 +740,27 @@ class main(threading.Thread):
     f = open('/dev/urandom', 'r')
     self.httpd.captcha_secret = f.read(32)
     f.close() 
+    # read captcha quotes from file
+    qoutefile = 'plugins/postman/quotes.txt'
+    if os.path.exists(qoutefile):
+      with open(qoutefile) as f:
+        self.httpd.quotes = [q for q in f]
+    else:
+      self.httpd.quotes = (
+        '''<i>"Being stupid for no reason is very human-like. I will continue to spam."</i> <b>Spammer-kun</b>''',
+        '''<i>"I bet the jews did this..."</i> <b>wowaname</b>''',
+        '''<i>"Put a Donk on it."</i> <b>Krane</b>''',
+        '''<i>"All You're Base are belong to us."</i> <b>Eric Schmit</b>''',
+        '''<i>"I was just pretending to be retarded!!"</i> <b>Anonymous</b>''',
+        '''<i>"Sometimes I wish I didn't have a diaper fetish."</i> <b>wowaname</b>''',
+        '''<i>"DOES. HE. LOOK. LIKE. A BITCH?"</i> <b>Jesus Christ our Lord And Savior</b>''',
+        '''<i>"ENGLISH MOTHERFUCKA DO YOU SPEAK IT?"</i> <b>Jesus Christ our Lord And Savior</b>''',
+        '''<i>"We are watching you masturbate"</i> <b>NSA Internet Anonymity Specialist and Privacy Expert</b>''',
+        '''<i>"I want to eat apples and bananas"</i> <b>Cookie Monster</b>''',
+        '''<i>"Ponies are red, Twilight is blue, I have a boner, and so do you</i> <b>TriPh0rce, Maintainer of All You're Wiki</b>''',
+        '''<i>"C++ is a decent language and there is almost no reason to use C in the modern age"</i> <b>psi</b>''',
+        '''<i>"windows is full of aids"</i> <b>wowaname</b>'''
+      )
 
   def shutdown(self):
     if self.serving:
