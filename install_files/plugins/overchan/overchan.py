@@ -710,7 +710,7 @@ class main(threading.Thread):
     parent_id = parent_row[0]
     if parent_id == "":
       # article is root post
-      return '<a href="thread-%s.html">%s%s</a>' % (rematch.group(2), rematch.group(1), rematch.group(2))
+      return '<a onclick="return highlight(\'%s\');" href="thread-%s.html">%s%s</a>' % (rematch.group(2), rematch.group(2), rematch.group(1), rematch.group(2))
     # article has a parent
     # FIXME: cache results somehow?
     parent = sha1(parent_id).hexdigest()[:10]
