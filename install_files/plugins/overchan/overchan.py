@@ -116,6 +116,10 @@ class main(threading.Thread):
       try:    self.archive_pages_per_board = int(args['archive_pages_per_board'])
       except: pass
 
+    self.news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'
+    if 'news_uid' in args:
+      self.news_uid = args['news_uid']
+
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.die('replacement for root posts without picture not found: %s' % os.path.join(self.template_directory, self.no_file))
@@ -1816,7 +1820,6 @@ class main(threading.Thread):
     self.log(self.logger.INFO, 'generating %s/overview.html' % self.output_directory)
     t_engine_mappings_overview = dict()
     boardlist = list()
-    news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'
     # FIXME: cache this shit somewhere
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
       current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
@@ -1824,7 +1827,7 @@ class main(threading.Thread):
       boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
     boardlist[-1] = boardlist[-1][:-1]
     t_engine_mappings_overview['boardlist'] = ''.join(boardlist)
-    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (news_uid, )).fetchone()
+    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (self.news_uid, )).fetchone()
     if not row:
       t_engine_mappings_overview['subject'] = ''
       t_engine_mappings_overview['sent'] = ''
@@ -1835,8 +1838,8 @@ class main(threading.Thread):
       t_engine_mappings_overview['parent'] = 'does_not_exist_yet'
       t_engine_mappings_overview['message'] = 'once upon a time there was a news post'
     else:
-      postid = sha1(news_uid).hexdigest()[:10]
-      if row[4] == '' or row[4] == news_uid:
+      postid = sha1(self.news_uid).hexdigest()[:10]
+      if row[4] == '' or row[4] == self.news_uid:
         parent = postid
       else:
         parent = sha1(row[4]).hexdigest()[:10]
