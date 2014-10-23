@@ -1897,6 +1897,13 @@ class main(threading.Thread):
           subject = self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (row[5],)).fetchone()[0] 
         except:
           subject = 'root post not yet available'
+      # show first message words as subject in case it is None
+      if subject == 'None':
+        # if root post
+        if row[5] == '' or row[5] == row[4]:
+          subject = self.sqlite.execute('SELECT message FROM articles WHERE article_uid = ?', (row[4],)).fetchone()[0][:60]
+        else:
+          subject = self.sqlite.execute('SELECT message FROM articles WHERE article_uid = ?', (row[5],)).fetchone()[0][:60]
       if len(subject) > 60:
         subject = subject[:60] + ' [..]'
       if len(author) > 20:
