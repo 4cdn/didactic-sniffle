@@ -474,6 +474,10 @@ class postman(BaseHTTPRequestHandler):
       redirect_target = '/' + redirect_target
     boundary = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(40))
     date = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
+    try:
+      i2p_desthash = self.headers.get('X-I2P-DestHash')
+    except:
+      i2p_desthash = 'non-i2p'
     #f = open('tmp/' + boundary, 'w')
     if signature:
       link = os.path.join('incoming', 'tmp', boundary + '_')
@@ -481,9 +485,9 @@ class postman(BaseHTTPRequestHandler):
       link = os.path.join('incoming', 'tmp', boundary)
     f = open(link, 'w')
     if file_name == '':
-      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage).replace('\r', ''))
+      f.write(self.origin.template_message_nopic.format(sender, date, group, subject, message_uid, reply, uid_host, comment, sage, i2p_desthash).replace('\r', ''))
     else:
-      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage).replace('\r', ''))
+      f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage, i2p_desthash).replace('\r', ''))
       if 'hash' in post_vars:
         f.write(post_vars.getvalue('file_b64', '').replace('\r', ''))
       else:
@@ -506,7 +510,7 @@ class postman(BaseHTTPRequestHandler):
       signed = open(link[:-1], 'w')
       f = open(link, 'r')
       link = link[:-1]
-      signed.write(self.origin.template_message_signed.format(sender, date, group, subject, message_uid, reply, uid_host, pubkey, signature, sage))
+      signed.write(self.origin.template_message_signed.format(sender, date, group, subject, message_uid, reply, uid_host, pubkey, signature, sage, i2p_desthash))
       f.seek(0)
       for line in f:
         signed.write(line)
