@@ -1313,8 +1313,8 @@ class main(threading.Thread):
           pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
         else:
           pagelist.append('[{0}]&nbsp;'.format(page))
-        if generate_archive == True:
-          pagelist.append('<a href="{0}-archive-1.html">[Archive]</a>&nbsp;'.format(board_name_unquoted))
+      if generate_archive == True:
+        pagelist.append('<a href="{0}-archive-1.html">[Archive]</a>&nbsp;'.format(board_name_unquoted))
       t_engine_mapper_board['pagelist'] = ''.join(pagelist)
       t_engine_mapper_board['boardlist'] = boardlist
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
