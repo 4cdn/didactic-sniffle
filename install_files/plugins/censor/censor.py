@@ -145,6 +145,8 @@ class main(threading.Thread):
     self.dropperdb = self.sqlite_dropper_conn.cursor()
     self.sqlite_censor_conn = sqlite3.connect('censor.db3')
     self.censordb = self.sqlite_censor_conn.cursor()
+    self.sqlite_overchan_conn = sqlite3.connect('plugins/overchan/overchan.db3')
+    self.overchandb = self.sqlite_overchan_conn.cursor()
     self.allowed_cache = dict()
     self.key_cache = dict()
     self.command_cache = dict()
@@ -475,6 +477,15 @@ class main(threading.Thread):
       #  return (message_id, None, time_fs, time_sql)
       return (message_id, None)
 
+    row = self.overchandb.execute('SELECT parent from articles WHERE article_uid = ?', (message_id,)).fetchone()
+    if row != None:
+      if row[0] == '' or row[0] == 'message_id':
+        self.log(self.logger.DEBUG, "article is a root post, deleting whole thread")
+        for row in self.overchandb.execute('SELECT article_uid from articles where parent = ?', (message_id,)).fetchall():
+          self.delete_article(row[0])
+    return self.delete_article(message_id)
+
+  def delete_article(self, message_id):
     groups = list()
     group_rows = list()
     #timestamp_start = time.time()
