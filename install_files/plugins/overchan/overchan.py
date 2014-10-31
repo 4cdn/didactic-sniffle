@@ -547,18 +547,16 @@ class main(threading.Thread):
           if int(self.sqlite.execute("SELECT count(article_uid) FROM articles WHERE parent = ?", (message_id,)).fetchone()[0]) > 0:
             # root posts with child posts
             self.log(self.logger.DEBUG, 'deleting message_id %s, got a root post with attached child posts' % message_id)
-            root_posts.append(message_id)
-            self.sqlite.execute('UPDATE articles SET imagelink = "invalid", thumblink = "invalid", imagename = "invalid", message = "this post has been deleted by some evil mod", sender = "deleted", email = "deleted", subject = "deleted", public_key = "" WHERE article_uid = ?', (message_id,))
-            if message_id not in self.regenerate_threads:
-              self.regenerate_threads.append(message_id)
+            # delete child posts
+            self.sqlite.execute('DELETE FROM articles WHERE parent = ?', (message_id,))
           else:
             # root posts without child posts
             self.log(self.logger.DEBUG, 'deleting message_id %s, got a root post without any child posts' % message_id)
-            self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
-            try:
-              os.unlink(os.path.join(self.output_directory, "thread-%s.html" % sha1(message_id).hexdigest()[:10]))
-            except Exception as e:
-              self.log(self.logger.WARNING, 'could not delete thread for message_id %s: %s' % (message_id, e))
+          self.sqlite.execute('DELETE FROM articles WHERE article_uid = ?', (message_id,))
+          try:
+            os.unlink(os.path.join(self.output_directory, "thread-%s.html" % sha1(message_id).hexdigest()[:10]))
+          except Exception as e:
+            self.log(self.logger.WARNING, 'could not delete thread for message_id %s: %s' % (message_id, e))
         else:
           # child post
           self.log(self.logger.DEBUG, 'deleting message_id %s, got a child post' % message_id)
