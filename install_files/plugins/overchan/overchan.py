@@ -169,24 +169,59 @@ class main(threading.Thread):
     f = codecs.open(os.path.join(self.template_directory, 'stats_boards_row.tmpl'), "r", "utf-8")
     self.template_stats_boards_row = f.read()
     f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'base_pagelist.tmpl'), "r", "utf-8")
+    self.template_base_pagelist = f.read()
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'base_postform.tmpl'), "r", "utf-8")
+    self.template_base_postform = f.read()
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'base_help.tmpl'), "r", "utf-8")
+    self.template_base_help = string.Template(f.read()).safe_substitute(
+      help=self.template_help
+    )
+    f = codecs.open(os.path.join(self.template_directory, 'base_head.tmpl'), "r", "utf-8")
+    self.template_base_head = string.Template(f.read()).safe_substitute(
+      title=self.html_title
+    )
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'base_footer.tmpl'), "r", "utf-8")
+    self.template_base_footer = f.read()
+    f.close()
     
     # template_engines
     f = codecs.open(os.path.join(self.template_directory, 'board.tmpl'), "r", "utf-8")
     self.t_engine_board = string.Template(
       string.Template(f.read()).safe_substitute(
-        help=self.template_help,
-        title=self.html_title
+        base_head=self.template_base_head,
+        base_pagelist=self.template_base_pagelist,
+        base_postform=self.template_base_postform,
+        base_help=self.template_base_help,
+        base_footer=self.template_base_footer
+      )
+    )
+    f.close()
+    f = codecs.open(os.path.join(self.template_directory, 'board_archive.tmpl'), "r", "utf-8")
+    self.t_engine_board_archive = string.Template(
+      string.Template(f.read()).safe_substitute(
+        base_head=self.template_base_head,
+        base_pagelist=self.template_base_pagelist,
+        base_postform=self.template_base_postform,
+        base_help=self.template_base_help,
+        base_footer=self.template_base_footer
       )
     )
     f.close()
     f = codecs.open(os.path.join(self.template_directory, 'board_recent.tmpl'), "r", "utf-8")
     self.t_engine_board_recent = string.Template(
       string.Template(f.read()).safe_substitute(
-        help=self.template_help,
-        title=self.html_title
+        base_head=self.template_base_head,
+        base_postform=self.template_base_postform,
+        base_help=self.template_base_help,
+        base_footer=self.template_base_footer
       )
     )
     f.close()
+
     f = codecs.open(os.path.join(self.template_directory, 'thread_single.tmpl'), "r", "utf-8")
     self.t_engine_thread_single = string.Template(
       string.Template(f.read()).safe_substitute(
@@ -223,8 +258,8 @@ class main(threading.Thread):
     f = codecs.open(os.path.join(self.template_directory, 'board_threads.tmpl'), "r", "utf-8")
     self.t_engine_board_threads = string.Template(f.read())
     f.close
-    f = codecs.open(os.path.join(self.template_directory, 'board_archive.tmpl'), "r", "utf-8")
-    self.t_engine_board_archive = string.Template(f.read())
+    f = codecs.open(os.path.join(self.template_directory, 'archive_threads.tmpl'), "r", "utf-8")
+    self.t_engine_archive_threads = string.Template(f.read())
     f.close
     f = codecs.open(os.path.join(self.template_directory, 'message_root.tmpl'), "r", "utf-8")
     self.t_engine_message_root = string.Template(f.read())
@@ -1440,7 +1475,7 @@ class main(threading.Thread):
       t_engine_mapper_root['imagename'] =  root_row[5]
 
       threads.append(
-        self.t_engine_board_archive.substitute(
+        self.t_engine_archive_threads.substitute(
           message_root=self.t_engine_message_root.substitute(t_engine_mapper_root)
         )
       )
@@ -1460,7 +1495,7 @@ class main(threading.Thread):
       t_engine_mapper_board['board'] = board_name
       t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
       f = codecs.open(os.path.join(self.output_directory, '{0}-archive-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
-      f.write(self.t_engine_board.substitute(t_engine_mapper_board))
+      f.write(self.t_engine_board_archive.substitute(t_engine_mapper_board))
       f.close()
       del pagelist
       del boardlist
