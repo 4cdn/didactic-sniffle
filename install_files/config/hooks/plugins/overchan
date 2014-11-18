@@ -26,5 +26,6 @@
 #start_param audio_file=audio.png
 #start_param webm_file=video.png
 #start_param news_uid=<lwmueokaxt1389929084@web.overchan.sfor.ano>
+#start_param sqlite_synchronous=False
 
 overchan.*

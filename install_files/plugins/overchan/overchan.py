@@ -120,6 +120,11 @@ class main(threading.Thread):
     if 'news_uid' in args:
       self.news_uid = args['news_uid']
 
+    self.sqlite_synchronous = True
+    if 'sqlite_synchronous' in args:
+      try:   self.sqlite_synchronous = bool(args['sqlite_synchronous'])
+      except: pass
+
     # FIXME messy code is messy
     if not os.path.exists(os.path.join(self.template_directory, self.no_file)):
       self.die('replacement for root posts without picture not found: %s' % os.path.join(self.template_directory, self.no_file))
@@ -444,6 +449,8 @@ class main(threading.Thread):
     self.db_hasher = self.sqlite_hasher_conn.cursor() 
     self.sqlite_conn = sqlite3.connect(os.path.join(self.database_directory, 'overchan.db3'))
     self.sqlite = self.sqlite_conn.cursor()
+    if self.sqlite_synchronous == False:
+        self.sqlite.execute("PRAGMA synchronous = OFF")
     # FIXME use config table with current db version + def update_db(db_version) like in censor plugin
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS groups
                (group_id INTEGER PRIMARY KEY AUTOINCREMENT, group_name text UNIQUE, article_count INTEGER, last_update INTEGER)''')
