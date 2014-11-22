@@ -788,7 +788,7 @@ class main(threading.Thread):
     self.httpd.serve_forever()
     self.log(self.logger.INFO, 'bye')
 
-  def captcha_generate(self, text, secret, expires=120):
+  def captcha_generate(self, text, secret, expires=300):
     expires = int(time.time()) + expires
     if not expires % 3: solution_hash = sha256('%s%s%i' % (text, secret, expires)).hexdigest()
     elif expires % 2: solution_hash = sha256('%i%s%s' % (expires, text, secret)).hexdigest()
