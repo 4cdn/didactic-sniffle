@@ -41,7 +41,7 @@ class feed(threading.Thread):
     if outstream:          
       self.host = host
       self.port = port
-      self.queue = Queue.Queue()
+      self.queue = Queue.LifoQueue()
       self.outstream_stream = False
       self.outstream_ihave = False
       self.outstream_post = False

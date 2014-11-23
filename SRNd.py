@@ -684,9 +684,12 @@ class SRNd(threading.Thread):
                   self.log(self.logger.WARNING, 'unknown hook detected. wtf? %s' % hook)
         # got all whitelist matching hooks for current group which are not matched by blacklist as well in current_sync_targets. hopefully.
         if len(current_sync_targets) > 0:
+          # send fresh articles first
           file_list = os.listdir(group_dir)
-          random.shuffle(file_list)
+          file_list = [int(k) for k in file_list]
+          file_list.sort()
           for link in file_list:
+            link = str(link)
             try:
               message_id = os.path.basename(os.readlink(os.path.join(group_dir, link)))
               if os.stat(os.path.join(group_dir, link)).st_size == 0:
