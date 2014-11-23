@@ -8,3 +8,4 @@
 #start_param css_file=master.css
 #start_param debug=2
 #start_param reject_debug=True
+#start_param fast_uploads=True

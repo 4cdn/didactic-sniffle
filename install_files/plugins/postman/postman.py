@@ -276,43 +276,14 @@ class postman(BaseHTTPRequestHandler):
       self.send_response(200)
       self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write('''<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
-  "http://www.w3.org/TR/html4/strict.dtd">
-<html>
-  <head>
-    <title>straight into deep space</title>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8">
-    <link rel="stylesheet" href="/styles.css" type="text/css">
-    <link rel="stylesheet" href="/user.css" type="text/css">
-  </head>
-  <body class="mod">
-    <center>
-      %s
-      <br />
-      <br />
-      <img src="data:image/png;base64,%s" />
-      <br />
-      <form ACTION="/incoming/verify" METHOD="POST" enctype="multipart/form-data">
-        <input type="hidden" name="hash" value="%s" />
-        <input type="hidden" name="expires" value="%i" />
-        <input type="text" class="posttext" style="width: 150px;" name="solution" />
-        <input type="hidden" name="frontend" value="%s" />
-        <input type="hidden" name="board" value="%s" />
-        <input type="hidden" name="reply" value="%s" />
-        <input type="hidden" name="target" value="%s" />
-        <input type="hidden" name="name" value="%s" />
-        <input type="hidden" name="email" value="%s" />
-        <input type="hidden" name="subject" value="%s" />
-        <input type="hidden" name="comment" value="%s" />
-        <input type="hidden" name="file_name" value="%s" />
-        <input type="hidden" name="file_ct" value="%s" />
-        <input type="hidden" name="file_b64" value="%s" />
-        <br />
-        <input type="submit" class="postbutton" value="solve dat shit" />
-      </form>
-    </center>
-  </body>
-</html>''' % (message, b64, solution_hash, expires, frontend, board, reply, target, name, email, subject, comment, file_name, file_ct, file_b64))
+    # use file_name as key and file content + current time as value
+    if self.origin.fast_uploads == True:
+      if file_b64 != '':
+        # we can have empty file_b64 here whether captcha was entered wrong first time
+        self.origin.temp_file_obj[file_name] = [file_b64, int(time.time())]
+      self.wfile.write(self.origin.template_verify_fast.format(message, b64, solution_hash, expires, frontend, board, reply, target, name, email, subject, comment, file_name, file_ct))
+    else:
+      self.wfile.write(self.origin.template_verify_slow.format(message, b64, solution_hash, expires, frontend, board, reply, target, name, email, subject, comment, file_name, file_ct, file_b64))
     return 
 
   def handleNewArticle(self, post_vars=None):
@@ -489,7 +460,13 @@ class postman(BaseHTTPRequestHandler):
     else:
       f.write(self.origin.template_message_pic.format(sender, date, group, subject, message_uid, reply, uid_host, boundary, comment, content_type, file_name, sage, i2p_desthash).replace('\r', ''))
       if 'hash' in post_vars:
-        f.write(post_vars.getvalue('file_b64', '').replace('\r', ''))
+        if self.origin.fast_uploads == True:
+          # get file looking by file_name
+          f.write(self.origin.temp_file_obj[file_name][0].replace('\r', ''))
+          del self.origin.temp_file_obj[file_name]
+          self.cleanup_uploads()
+        else:
+          f.write(post_vars.getvalue('file_b64', '').replace('\r', ''))
       else:
         base64.encode(post_vars['file'].file, f)
       f.write('--{0}--\n'.format(boundary))
@@ -552,6 +529,16 @@ class postman(BaseHTTPRequestHandler):
       else:
         self.origin.log(self.origin.logger.WARNING, 'unhandled exception while processing new post: %s' % e)
         self.origin.log(self.origin.logger.WARNING, traceback.format_exc())
+
+  def cleanup_uploads(self):
+    """ delete old uploads """
+    l = list()
+    timestamp = int(time.time()) - 3600
+    for key in self.origin.temp_file_obj:
+      if self.origin.temp_file_obj[key][1] < timestamp:
+        l.append(key)
+    for k in l:
+      del self.origin.temp_file_obj[k]
 
 class main(threading.Thread):
   
@@ -626,6 +613,12 @@ class main(threading.Thread):
       f.close()
       os.chmod('seed', 0o600)
 
+    self.httpd.fast_uploads = False
+    if 'fast_uploads' in args:
+      if args['fast_uploads'].lower() in ('true', 'yes', '1'):
+        self.httpd.fast_uploads = True
+        self.httpd.temp_file_obj = dict()
+
     if 'reject_debug' in args:
       tmp = args['reject_debug']
       if tmp.lower() == 'true':
@@ -649,6 +642,14 @@ class main(threading.Thread):
     f = open(os.path.join(template_directory, 'message_signed.template'), 'r')
     self.httpd.template_message_signed = f.read()
     f.close()
+    if self.httpd.fast_uploads == True:
+      f = open(os.path.join(template_directory, 'verify_fast.template'), 'r')
+      self.httpd.template_verify_fast = f.read()
+      f.close()
+    else:
+      f = open(os.path.join(template_directory, 'verify_slow.template'), 'r')
+      self.httpd.template_verify_slow = f.read()
+      f.close()
 
     # read frontends
     self.log(self.logger.DEBUG, 'reading frontend configuration..')
