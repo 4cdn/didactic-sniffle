@@ -634,7 +634,10 @@ class SRNd(threading.Thread):
     self.update_hooks()
 
     current_sync_targets = list()
-    for group in os.listdir('groups'):
+    groups = os.listdir('groups')
+    # sync groups in random order
+    random.shuffle(groups)
+    for group in groups:
       group_dir = os.path.join('groups', group)
       if os.path.isdir(group_dir):
         self.log(self.logger.DEBUG, 'startup sync, checking %s..' % group)
