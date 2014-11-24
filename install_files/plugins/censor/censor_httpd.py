@@ -582,7 +582,7 @@ class censor(BaseHTTPRequestHandler):
   def handle_block_board(self, board_id):
     try:
       board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
-      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-del %s" % (board_name)), "httpd")
+      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-del %s" % (board_name)), source="httpd")
       self.send_redirect(self.root_path + 'settings', "redirecting. it might take a second to synchronize.", 3)
     except Exception as e:
       self.send_redirect(self.root_path + 'settings', "could not block board: %s" % e, 10)
@@ -590,7 +590,7 @@ class censor(BaseHTTPRequestHandler):
   def handle_unblock_board(self, board_id):
     try:
       board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
-      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-add %s" % (board_name)), "httpd")
+      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-add %s" % (board_name)), source="httpd")
       self.send_redirect(self.root_path + 'settings', "redirecting. it might take a second to synchronize.", 3)
     except Exception as e:
       self.send_redirect(self.root_path + 'settings', "could not unblock board: %s" % e, 10)
