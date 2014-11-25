@@ -634,6 +634,7 @@ class SRNd(threading.Thread):
     self.update_hooks()
 
     current_sync_targets = list()
+    synclist = dict()
     groups = os.listdir('groups')
     # sync groups in random order
     random.shuffle(groups)
@@ -688,7 +689,16 @@ class SRNd(threading.Thread):
           file_list = os.listdir(group_dir)
           file_list = [int(k) for k in file_list]
           file_list.sort()
-          for link in file_list:
+          synclist[group] = {'targets': current_sync_targets, 'file_list': file_list }
+    while len(synclist) > 0:
+      for group in synclist:
+        empty_sync_group = list()
+        if len(synclist[group]['file_list']) == 0:
+          empty_sync_group.append(group)
+        else:
+          group_dir = os.path.join('groups', group)
+          sync_chunk = synclist[group]['file_list'][:500]
+          for link in sync_chunk:
             link = str(link)
             try:
               message_id = os.path.basename(os.readlink(os.path.join(group_dir, link)))
@@ -698,13 +708,17 @@ class SRNd(threading.Thread):
             except:
               self.log(self.logger.ERROR, 'invalid link found in group %s with id %s' % (group_dir, link))
               continue
-            for current_hook in current_sync_targets:
+            for current_hook in synclist[group]['targets']:
               if current_hook.startswith('outfeed-'):
                 self.feeds[current_hook].add_article(message_id)
               elif current_hook.startswith('plugin-'):
                 self.plugins[current_hook].add_article(message_id)
               else:
                 self.log(self.logger.WARNING, 'unknown sync_hook detected. wtf? %s' % hook)
+          del synclist[group]['file_list'][:500]
+      for group in empty_sync_group:
+        del synclist[group]
+
     self.log(self.logger.DEBUG, 'startup_sync done. hopefully.')
     del current_sync_targets
     
