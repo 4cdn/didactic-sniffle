@@ -152,8 +152,8 @@ class feed(threading.Thread):
       self.cooldown_counter += 1
 
   def run(self):
-    self.sqlite_conn = sqlite3.connect('dropper.db3')
-    self.sqlite = self.sqlite_conn.cursor()
+    self.sqlite_conn_dropper = sqlite3.connect('dropper.db3')
+    self.sqlite_dropper = self.sqlite_conn_dropper.cursor()
     self.running = True
     connected = False
     self.multiline = False
@@ -564,7 +564,7 @@ class feed(threading.Thread):
       if '/' in arg:
         self.send('435 illegal message-id\r\n')
         return
-      #if self.sqlite.execute('SELECT message_id FROM articles WHERE message_id = ?', (arg,)).fetchone():
+      #if self.sqlite_dropper.execute('SELECT message_id FROM articles WHERE message_id = ?', (arg,)).fetchone():
       if os.path.exists(os.path.join('articles', arg)) or os.path.exists(os.path.join('incoming', arg)):
         self.send('435 already have this article\r\n')
         return
@@ -585,7 +585,7 @@ class feed(threading.Thread):
         elif self.current_article_id == -1:
           self.send('420 i claim in current group is empty\r\n')
         else:
-          message_id = self.sqlite.execute('SELECT message_id FROM articles WHERE group_id = ? AND article_id = ?', (self.current_group_id, self.current_article_id)).fetchone()
+          message_id = self.sqlite_dropper.execute('SELECT message_id FROM articles WHERE group_id = ? AND article_id = ?', (self.current_group_id, self.current_article_id)).fetchone()
           if message_id:
             message_id = message_id[0]
             self.send('223 {0} {1}\r\n'.format(self.current_article_id, message_id))
@@ -602,7 +602,7 @@ class feed(threading.Thread):
         if self.current_group_id == -1:
           self.send('412 i much recommend in select to the newsgroup first\r\n')
         else:
-          message_id = self.sqlite.execute('SELECT message_id FROM articles WHERE group_id = ? AND article_id = ?', (self.current_group_id, arg)).fetchone()
+          message_id = self.sqlite_dropper.execute('SELECT message_id FROM articles WHERE group_id = ? AND article_id = ?', (self.current_group_id, arg)).fetchone()
           if message_id:
             message_id = message_id[0]
             self.current_article_id = arg
@@ -612,7 +612,7 @@ class feed(threading.Thread):
       except ValueError:
         arg = line.split(' ')[1]
         # STAT argument is message_id
-        #if self.sqlite.execute('SELECT message_id FROM articles WHERE message_id = ?', (arg,)).fetchone():
+        #if self.sqlite_dropper.execute('SELECT message_id FROM articles WHERE message_id = ?', (arg,)).fetchone():
         if os.path.exists(os.path.join('articles', arg)):
           self.send('223 0 {0}\r\n'.format(arg))
         else:
