@@ -431,6 +431,16 @@ class feed(threading.Thread):
       self.add_article(message_id)
     self.multiline_out = False
 
+  def update_trackdb(self, line):
+    self.log(self.logger.DEBUG, 'updating trackdb: %s' % line)
+    message_id = line.split(' ')[1]
+    try:
+      f = open('{0}.trackdb'.format(self.name), 'a')
+    except IOError as e:
+      self.log(self.logger.ERROR, 'cannot open: %s: %s' % ('{0}.trackdb'.format(name), e.strerror))
+    f.write('{0}\n'.format(message_id))
+    f.close
+
   def handle_line(self, line):
     self.log(self.logger.VERBOSE, 'in: %s' % line)
     commands = line.upper().split(' ')
@@ -479,17 +489,20 @@ class feed(threading.Thread):
         if commands[0] == '238':
           # CHECK 238 == article wanted
           self.articles_to_send.append(line.split(' ')[1])
+        if commands[0] == '239' or commands[0] == '438' or commands[0] == '439':
+          # TAKETHIS 239 == Article transferred OK, record successfully sent message-id to database
+          # CHECK 438 == Article not wanted
+          # TAKETHIS 439 == Transfer rejected; do not retry
+          self.update_trackdb(line)
         elif commands[0] == '431':
           # CHECK 431 == try again later
           self.add_article(line.split(' ')[1])
-        elif commands[0] == '438':
-          # CHECK 438 == article not wanted
-          return
       elif self.outstream_ihave:
         if commands[0] == '235' or commands[0] == '435' or commands[0] == '437':
           # IHAVE 235 == last article received
           # IHAVE 435 == article not wanted
           # IHAVE 437 == article rejected
+          self.update_trackdb(line)
           if self.queue.qsize() > 0:
             self.message_id = self.queue.get()
             self.send('IHAVE {0}\r\n'.format(self.message_id))
@@ -508,6 +521,9 @@ class feed(threading.Thread):
         elif commands[0] == '240' or commands[0] == '441':
           # POST 240 == last article received
           # POST 441 == posting failed
+          if commands[0] == '240':
+            # Got 240 after POST: record successfully sent message-id to database
+            self.update_trackdb(line)
           if self.queue.qsize() > 0:
             self.message_id = self.queue.get()
             self.send('POST\r\n')

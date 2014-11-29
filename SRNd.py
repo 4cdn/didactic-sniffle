@@ -465,6 +465,7 @@ class SRNd(threading.Thread):
     self.log(self.logger.INFO, 'reading outfeeds..')
     counter_new = 0
     current_feedlist = list()
+    self.feed_db = dict()
     for outfeed in os.listdir(os.path.join('config', 'hooks', 'outfeeds')):
       outfeed_file = os.path.join('config', 'hooks', 'outfeeds', outfeed)
       if os.path.isfile(outfeed_file):
@@ -499,6 +500,19 @@ class SRNd(threading.Thread):
           host = outfeed
           port = 119
         name = "outfeed-{0}-{1}".format(host, port)
+        # open track db here, read, close
+        if sync_on_startup == True:
+          self.feed_db[name] = list()
+          try:
+            f = open('{0}.trackdb'.format(name), 'r')
+          except IOError as e:
+            if e.errno == 2:
+              pass
+            else:
+              self.log(self.logger.ERROR, 'cannot open: %s: %s' % ('{0}.trackdb'.format(name), e.strerror))
+          else:
+            for line in f.readlines():
+              self.feed_db[name].append(line.rstrip('\n'))
         current_feedlist.append(name)
         proxy = None
         if proxy_type != None:
@@ -711,7 +725,10 @@ class SRNd(threading.Thread):
               continue
             for current_hook in synclist[group]['targets']:
               if current_hook.startswith('outfeed-'):
-                self.feeds[current_hook].add_article(message_id)
+                try:
+                  self.feed_db[current_hook].index(message_id)
+                except ValueError:
+                  self.feeds[current_hook].add_article(message_id)
               elif current_hook.startswith('plugin-'):
                 self.plugins[current_hook].add_article(message_id)
               else:
@@ -722,6 +739,7 @@ class SRNd(threading.Thread):
 
     self.log(self.logger.DEBUG, 'startup_sync done. hopefully.')
     del current_sync_targets
+    del self.feed_db
     
     #files = filter(lambda f: os.stat(os.path.join(group_dir, f)).st_size > 0, os.listdir(group_dir)
     #files = filter(lambda f: os.path.isfile(os.path.join('articles', f)), os.listdir('articles'))
