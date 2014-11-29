@@ -511,6 +511,7 @@ class SRNd(threading.Thread):
               pass
         if name not in self.feeds:
           try:
+            self.log(self.logger.DEBUG, 'starting outfeed: %s' % name)
             self.feeds[name] = feed.feed(self, self.logger, outstream=True, host=host, port=port, sync_on_startup=sync_on_startup, proxy=proxy, debug=debuglevel)
             self.feeds[name].start()
             counter_new += 1
