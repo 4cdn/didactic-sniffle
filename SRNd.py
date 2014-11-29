@@ -516,7 +516,7 @@ class SRNd(threading.Thread):
             self.feeds[name].start()
             counter_new += 1
           except Exception as e:
-            self.log(self.logger.WARNING, 'could not start outfeed %s: %s' % (name, e), 0)
+            self.log(self.logger.WARNING, 'could not start outfeed %s: %s' % (name, e))
     counter_removed = 0
     feeds = list()
     for name in self.feeds:
