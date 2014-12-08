@@ -48,6 +48,7 @@ class main(threading.Thread):
     # TODO: move sleep stuff to config table
     self.sleep_threshold = 10
     self.sleep_time = 0.02
+    self.last_thread = dict()
 
     error = ''
     for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title', 'audio_file'):
@@ -1366,9 +1367,10 @@ class main(threading.Thread):
       del pagelist
       del boardlist
       del threads
-    if generate_archive == True:
+    if generate_archive and (not self.last_thread.has_key(group_id) or self.last_thread[group_id] != root_message_id_hash):
+      self.last_thread[group_id] = root_message_id_hash
       self.generate_archive(group_id)
-    if self.enable_recent == True:
+    if self.enable_recent:
       self.generate_recent(group_id)
 
   def generate_archive(self, group_id):
