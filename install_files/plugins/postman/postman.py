@@ -58,7 +58,7 @@ class postman(BaseHTTPRequestHandler):
         # TODO: trap it: while True; wfile.write(random*x); sleep 1; done
         # TODO: ^ requires multithreaded BaseHTTPServer
         if self.origin.fake_ok:
-          self.exit_ok(2, '/')
+          self.exit_redirect(2, '/')
         return
     self.path = unquote(self.path)
     if self.path == '/incoming':
@@ -72,10 +72,7 @@ class postman(BaseHTTPRequestHandler):
       return
     self.origin.log(self.origin.logger.WARNING, "illegal POST access: %s" % self.path)
     self.origin.log(self.origin.logger.WARNING, self.headers)
-    self.send_response(200)
-    self.send_header('Content-type', 'text/plain')
-    self.end_headers()
-    self.wfile.write('nope')
+    self.exit_redirect('60', '/', False, 'nope')
 
   def do_GET(self):
     cookie = self.headers.get('Cookie')
@@ -103,26 +100,17 @@ class postman(BaseHTTPRequestHandler):
       return
     self.origin.log(self.origin.logger.WARNING, "illegal GET access: %s" % self.path)
     self.origin.log(self.origin.logger.WARNING, self.headers)
-    self.send_response(200)
-    self.send_header('Content-type', 'text/plain')
-    self.end_headers()
-    self.wfile.write('nope')
-
-  def send_error(self, errormessage):
-    self.send_response(200)
-    self.send_header('Content-type', 'text/plain')
-    self.end_headers()
-    self.wfile.write(errormessage)
+    self.exit_redirect(60, '/', False, 'nope')
 
   def die(self, message=''):
     self.origin.log(self.origin.logger.WARNING, "%s:%i wants to fuck around, %s" % (self.client_address[0], self.client_address[1], message))
     self.origin.log(self.origin.logger.WARNING, self.headers)
     if self.origin.reject_debug:
-      self.send_error('don\'t fuck around here mkay\n{0}'.format(message))
+      self.exit_redirect(60, '/', False, 'don\'t fuck around here mkay\n{0}'.format(message))
     else:
-      self.send_error('don\'t fuck around here mkay')
+      self.exit_redirect(60, '/', False, 'don\'t fuck around here mkay')
 
-  def exit_ok(self, redirect_duration, redirect_target, add_spamheader=False):
+  def exit_redirect(self, redirect_duration, redirect_target, add_spamheader=False, message='your message has been received.'):
     self.send_response(200)
     if add_spamheader:
       if len(self.origin.spammers) > 255:
@@ -132,26 +120,7 @@ class postman(BaseHTTPRequestHandler):
       self.send_header('Set-Cookie', 'sid=%s; path=/incoming' % cookie)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write('''<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
-  "http://www.w3.org/TR/html4/strict.dtd">
-<html>
-  <head>
-    <title>straight into deep space</title>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8">
-    <link rel="stylesheet" href="/styles.css" type="text/css">
-    <link rel="stylesheet" href="/user.css" type="text/css">
-    <META HTTP-EQUIV="Refresh" CONTENT="{0}; URL={1}">
-  </head>
-  <body>
-    <center>
-      <br />
-      <br />
-      your message has been received.
-      <br />
-      this page will <a href="{1}">redirect</a> you in {0} seconds.
-    </center>
-  </body>
-</html>'''.format(redirect_duration, redirect_target))
+    self.wfile.write(self.origin.template_redirect.format(redirect_duration, redirect_target, message))
 
   def log_request(self, code):
     return
@@ -317,7 +286,7 @@ class postman(BaseHTTPRequestHandler):
     else:
       comment = post_vars['comment'].value
     if comment == '':
-      self.send_error('no message received. nothing to say?')
+      self.exit_redirect(60, '/', False, 'no message received. nothing to say?')
       return
     if 'enforce_board' in self.origin.frontends[frontend]:
       group = self.origin.frontends[frontend]['enforce_board']
@@ -504,23 +473,23 @@ class postman(BaseHTTPRequestHandler):
         self.origin.log(self.origin.logger.WARNING, "caught some new base64 spam for frontend %s: incoming/spam/%s" % (frontend, message_uid))
         self.origin.log(self.origin.logger.WARNING, self.headers)
         #if self.origin.fake_ok:
-        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        self.exit_redirect(redirect_duration, redirect_target, add_spamheader=True)
       elif len(subject) > 80 and self.origin.spamprot_base64.match(subject):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log(self.origin.logger.WARNING, "caught some new large subject spam for frontend %s: incoming/spam/%s" % (frontend, message_uid))
         self.origin.log(self.origin.logger.WARNING, self.headers)
         #if self.origin.fake_ok:
-        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        self.exit_redirect(redirect_duration, redirect_target, add_spamheader=True)
       elif len(name) > 80 and self.origin.spamprot_base64.match(name):
         os.rename(link, os.path.join('incoming', 'spam', message_uid))
         self.origin.log(self.origin.logger.WARNING, "caught some new large name spam for frontend %s: incoming/spam/%s" % (frontend, message_uid))
         self.origin.log(self.origin.logger.WARNING, self.headers)
         #if self.origin.fake_ok:
-        self.exit_ok(redirect_duration, redirect_target, add_spamheader=True)
+        self.exit_redirect(redirect_duration, redirect_target, add_spamheader=True)
       else:
         os.rename(link, os.path.join('incoming', boundary))
         #os.rename(link, os.path.join('incoming', 'spam', message_uid))
-        self.exit_ok(redirect_duration, redirect_target)
+        self.exit_redirect(redirect_duration, redirect_target)
     except socket.error as e:
       if e.errno == 32:
         self.origin.log(self.origin.logger.DEBUG, 'broken pipe: %s' % e)
@@ -641,6 +610,9 @@ class main(threading.Thread):
     f.close()
     f = open(os.path.join(template_directory, 'message_signed.template'), 'r')
     self.httpd.template_message_signed = f.read()
+    f.close()
+    f = open(os.path.join(template_directory, 'redirect.template'), 'r')
+    self.httpd.template_redirect = f.read()
     f.close()
     if self.httpd.fast_uploads == True:
       f = open(os.path.join(template_directory, 'verify_fast.template'), 'r')
