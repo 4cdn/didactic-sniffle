@@ -72,7 +72,7 @@ class postman(BaseHTTPRequestHandler):
       return
     self.origin.log(self.origin.logger.WARNING, "illegal POST access: %s" % self.path)
     self.origin.log(self.origin.logger.WARNING, self.headers)
-    self.exit_redirect('60', '/', False, 'nope')
+    self.exit_redirect(9, '/overview.html', False, 'nope')
 
   def do_GET(self):
     cookie = self.headers.get('Cookie')
@@ -100,15 +100,15 @@ class postman(BaseHTTPRequestHandler):
       return
     self.origin.log(self.origin.logger.WARNING, "illegal GET access: %s" % self.path)
     self.origin.log(self.origin.logger.WARNING, self.headers)
-    self.exit_redirect(60, '/', False, 'nope')
+    self.exit_redirect(9, '/overview.html', False, 'nope')
 
   def die(self, message=''):
     self.origin.log(self.origin.logger.WARNING, "%s:%i wants to fuck around, %s" % (self.client_address[0], self.client_address[1], message))
     self.origin.log(self.origin.logger.WARNING, self.headers)
     if self.origin.reject_debug:
-      self.exit_redirect(60, '/', False, 'don\'t fuck around here mkay\n{0}'.format(message))
+      self.exit_redirect(9, '/overview.html', False, 'don\'t fuck around here mkay\n{0}'.format(message))
     else:
-      self.exit_redirect(60, '/', False, 'don\'t fuck around here mkay')
+      self.exit_redirect(9, '/overview.html', False, 'don\'t fuck around here mkay')
 
   def exit_redirect(self, redirect_duration, redirect_target, add_spamheader=False, message='your message has been received.'):
     self.send_response(200)
@@ -285,8 +285,9 @@ class postman(BaseHTTPRequestHandler):
       comment = base64.decodestring(post_vars.getvalue('comment', ''))
     else:
       comment = post_vars['comment'].value
-    if comment == '':
-      self.exit_redirect(60, '/', False, 'no message received. nothing to say?')
+    #TODO: UTF-8 strip?
+    if comment.strip(' \t\n\r') == '':
+      self.exit_redirect(9, '/overview.html', False, 'no message received. nothing to say?')
       return
     if 'enforce_board' in self.origin.frontends[frontend]:
       group = self.origin.frontends[frontend]['enforce_board']
