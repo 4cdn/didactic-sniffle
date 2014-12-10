@@ -576,7 +576,7 @@ class main(threading.Thread):
       elif line.lower().startswith("overchan-board-del"):
         self.overchan_board_del(line.lower().split(" ")[1])
       elif line.lower().startswith("overchan-delete-attachment "):
-        message_id = line.lower().split(" ")[1]
+        message_id = line.split(" ")[1]
         if os.path.exists(os.path.join("articles", "restored", message_id)):
           self.log(self.logger.DEBUG, 'message has been restored: %s. ignoring overchan-delete-attachment' % message_id)
           continue
@@ -613,7 +613,7 @@ class main(threading.Thread):
         self.sqlite.execute('UPDATE articles SET imagelink = "invalid", thumblink = "invalid", imagename = "invalid", public_key = "" WHERE article_uid = ?', (message_id,))
         self.sqlite_conn.commit()
       elif line.lower().startswith("delete "):
-        message_id = line.lower().split(" ")[1]
+        message_id = line.split(" ")[1]
         if os.path.exists(os.path.join("articles", "restored", message_id)):
           self.log(self.logger.DEBUG, 'message has been restored: %s. ignoring delete' % message_id)
           continue
