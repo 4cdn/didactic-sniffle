@@ -862,9 +862,13 @@ class censor(BaseHTTPRequestHandler):
         'CONTENT_TYPE':self.headers['Content-Type'],
       }
     )
-    
+
+    if 'target' in post_vars:
+      target = post_vars['target'].value
+    else:
+      target = '/'
     if 'secret' not in post_vars:
-      self.die('local moderation request: %s not in post_vars' % item)
+      self.die('local moderation request: secret not in post_vars')
       return
     secret = post_vars['secret'].value
     if len(secret) != 64:
@@ -872,8 +876,16 @@ class censor(BaseHTTPRequestHandler):
       return
     try:
       keypair = nacl.signing.SigningKey(unhexlify(secret))
+      pubkey = hexlify(keypair.verify_key.encode())
+      flags_available = int(self.origin.sqlite_censor.execute("SELECT flags FROM keys WHERE key=?", (pubkey,)).fetchone()[0])
+      flag_delete = int(self.origin.sqlite_censor.execute('SELECT flag FROM commands WHERE command="delete"').fetchone()[0])
+      flag_delete_a = int(self.origin.sqlite_censor.execute('SELECT flag FROM commands WHERE command="overchan-delete-attachment"').fetchone()[0])
     except Exception as e:
       self.die('local moderation request: invalid secret key received: %s' % e)
+      return
+    if ((flags_available & flag_delete) != flag_delete) and ((flags_available & flag_delete_a) != flag_delete_a):
+      self.die('local moderation request: public key rejected, no flags required')
+      return
     for key in ('purge', 'purge_root'):
       if key in post_vars:
         purges = post_vars.getlist(key)
@@ -921,7 +933,6 @@ class censor(BaseHTTPRequestHandler):
     hasher.update(old_line.replace("\r\n", ""))
     #keypair = nacl.signing.SigningKey(unhexlify(secret))
     signature = hexlify(keypair.sign(hasher.digest()).signature)
-    pubkey = hexlify(keypair.verify_key.encode())
     signed = self.origin.template_message_control_outer.format(sender, now, newsgroups, subject, uid_message_id, self.origin.uid_host, pubkey, signature, article)
     del keypair
     del signature
@@ -933,10 +944,6 @@ class censor(BaseHTTPRequestHandler):
     del article
     del signed
     os.rename(os.path.join('incoming', 'tmp', uid_message_id), os.path.join('incoming', uid_message_id))
-    if 'target' in post_vars:
-      target = post_vars['target'].value
-    else:
-      target = '/'
     self.send_redirect(target, 'moderation request received. will redirect you in a moment.', 2)
 
   def log_request(self, code):
