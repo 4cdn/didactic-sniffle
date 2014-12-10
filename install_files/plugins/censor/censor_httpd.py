@@ -832,7 +832,13 @@ class censor(BaseHTTPRequestHandler):
 
   def __get_message_id_by_hash(self, hash):
     return self.origin.sqlite_hasher.execute("SELECT message_id FROM article_hashes WHERE message_id_hash = ?", (hash,)).fetchone()[0]
-  
+
+  def __get_dest_hash_by_hash(self, hash):
+    return self.origin.sqlite_hasher.execute("SELECT sender_desthash FROM article_hashes WHERE message_id_hash = ?", (hash,)).fetchone()[0]
+
+  def __get_messages_id_by_dest_hash(self, dest_hash):
+    return self.origin.sqlite_hasher.execute("SELECT message_id FROM article_hashes WHERE sender_desthash = ?", (dest_hash,)).fetchall()
+
   def __breakit(self, rematch):
     return '%s ' % rematch.group(0)
 
@@ -877,17 +883,32 @@ class censor(BaseHTTPRequestHandler):
           except Exception as e:
             self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find message_id for hash %s: %s" % (item, e))
             self.origin.log(self.origin.logger.WARNING, self.headers)
+    if 'purge_desthash' in post_vars:
+      delete_by_desthash = post_vars.getlist('purge_desthash')
+      for item in delete_by_desthash:
+        i2p_dest_hash = ''
+        try:
+          i2p_dest_hash = self.__get_dest_hash_by_hash(item)
+        except Exception as e:
+          self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find X-I2P-DestHash for hash %s: %s" % (item, e))
+          self.origin.log(self.origin.logger.WARNING, self.headers)
+          continue
+        if i2p_dest_hash and len(i2p_dest_hash) == 44:
+          for message_id in self.__get_messages_id_by_dest_hash(i2p_dest_hash):
+            lines.append("delete %s" % message_id)
     if 'delete_a' in post_vars:
       delete_attachments = post_vars.getlist('delete_a')
       for item in delete_attachments:
         try:
           lines.append("overchan-delete-attachment %s" % self.__get_message_id_by_hash(item))
         except Exception as e:
-            self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find message_id for hash %s: %s" % (item, e))
-            self.origin.log(self.origin.logger.WARNING, self.headers)
+          self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find message_id for hash %s: %s" % (item, e))
+          self.origin.log(self.origin.logger.WARNING, self.headers)
     if len(lines) == 0:
       self.die('local moderation request: nothing to do')
       return
+    #remove duplicates
+    lines = list(set(lines))
     #lines.append("")
     article = self.origin.template_message_control_inner.format(sender, now, newsgroups, subject, uid_message_id, self.origin.uid_host, "\n".join(lines))
     #print "'%s'" % article
