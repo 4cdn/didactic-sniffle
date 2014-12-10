@@ -3,11 +3,9 @@
 import time
 import random
 import string
-import urllib
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from urllib import unquote
 from cgi import FieldStorage
-import base64
 from hashlib import sha1, sha512
 from binascii import hexlify, unhexlify
 from datetime import datetime
@@ -18,8 +16,7 @@ import socket
 import nacl.signing
 import codecs
 import re
-if __name__ == '__main__':
-  import nntplib
+
 
 class censor(BaseHTTPRequestHandler):
 
