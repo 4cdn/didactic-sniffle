@@ -69,7 +69,7 @@ class censor(BaseHTTPRequestHandler):
           self.handle_update_key(key)
           self.send_redirect(self.root_path, "update ok<br />redirecting you in a moment.", 4)
         except Exception as e:
-          self.send_redirect(self.root_path, "update failed: %s<br />redirecting you in a moment." % e, 10)
+          self.send_redirect(self.root_path, "update failed: %s<br />redirecting you in a moment." % e, 9)
       elif path.startswith('/settings?'):
         key = path[10:]
         flags_available = int(self.origin.sqlite_censor.execute("SELECT flags FROM keys WHERE key=?", (self.origin.sessions[self.session][1],)).fetchone()[0])
@@ -81,7 +81,7 @@ class censor(BaseHTTPRequestHandler):
           self.handle_update_board(key)
           self.send_redirect(self.root_path + 'settings', "update ok<br />redirecting you in a moment.", 4)
         except Exception as e:
-          self.send_redirect(self.root_path + 'settings', "update board failed: %s<br />redirecting you in a moment." % e, 10)
+          self.send_redirect(self.root_path + 'settings', "update board failed: %s<br />redirecting you in a moment." % e, 9)
       else:
         self.send_keys()
       return
@@ -170,8 +170,7 @@ class censor(BaseHTTPRequestHandler):
       local_nick = post_vars['local_nick'].value
     else:
       local_nick = ''
-    for flag in flags:
-      result += int(flag)
+    result = sum([int(flag) for flag in flags])
     self.origin.censor.add_article((self.origin.sessions[self.session][1], "srnd-acl-mod %s %i %s" % (key, result, local_nick)), "httpd")
 
   def handle_update_board(self, board_id):
@@ -189,8 +188,7 @@ class censor(BaseHTTPRequestHandler):
       local_nick = post_vars['local_nick'].value
     else:
       local_nick = ''
-    for flag in flags:
-      result += int(flag)
+    result = sum([int(flag) for flag in flags])
     board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
     self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s" % (board_name, result, local_nick)), "httpd")
 
@@ -270,13 +268,11 @@ class censor(BaseHTTPRequestHandler):
         return
       row = (key, '', 0, 0)
 
-    out = self.origin.template_modify_key
     flags = self.origin.sqlite_censor.execute("SELECT command, flag FROM commands").fetchall()
     cur_template = self.origin.template_log_flagnames
-    flaglist = list()
     flagset_template = self.origin.template_modify_key_flagset
-    out = out.replace("%%key%%", row[0])
-    out = out.replace("%%nick%%", row[1])
+    out = self.origin.template_modify_key.replace("%%key%%", row[0]).replace("%%nick%%", row[1])
+    flaglist = list()
     counter = 0
     for flag in flags:
       counter += 1
@@ -304,13 +300,11 @@ class censor(BaseHTTPRequestHandler):
     if not row:
       return "Board id %s not found" % board_id
 
-    out = self.origin.template_modify_board
     flags = self.origin.sqlite_overchan.execute("SELECT flag_name, flag FROM flags").fetchall()
     cur_template = self.origin.template_log_flagnames
-    flaglist = list()
     flagset_template = self.origin.template_modify_key_flagset
-    out = out.replace("%%board_id%%", str(row[0]))
-    out = out.replace("%%board%%",    row[1])
+    out = self.origin.template_modify_board.replace("%%board_id%%", str(row[0])).replace("%%board%%", row[1])
+    flaglist = list()
     counter = 0
     for flag in flags:
       counter += 1
@@ -328,10 +322,6 @@ class censor(BaseHTTPRequestHandler):
       flaglist.append(cur_template)
     out = out.replace("%%modify_key_flagset%%", "".join(flaglist))
     del flaglist[:]
-    #self.send_response(200)
-    #self.send_header('Content-type', 'text/html')
-    #self.end_headers()
-    #self.wfile.write(out)
     return out
 
   def send_keys(self):
@@ -903,9 +893,8 @@ class censor(BaseHTTPRequestHandler):
           self.origin.log(self.origin.logger.WARNING, "local moderation request: could not find X-I2P-DestHash for hash %s: %s" % (item, e))
           self.origin.log(self.origin.logger.WARNING, self.headers)
           continue
-        if i2p_dest_hash and len(i2p_dest_hash) == 44:
-          for message_id in self.__get_messages_id_by_dest_hash(i2p_dest_hash):
-            lines.append("delete %s" % message_id)
+        if len(i2p_dest_hash) == 44:
+          lines.extend("delete %s" % message_id for message_id in self.__get_messages_id_by_dest_hash(i2p_dest_hash))
     if 'delete_a' in post_vars:
       delete_attachments = post_vars.getlist('delete_a')
       for item in delete_attachments:
