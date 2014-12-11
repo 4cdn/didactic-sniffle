@@ -1496,7 +1496,7 @@ class main(threading.Thread):
         t_engine_mapper_board['board'] = board_name
         t_engine_mapper_board['target'] =  "{0}-archive-1.html".format(board_name_unquoted)
         f = codecs.open(os.path.join(self.output_directory, '{0}-archive-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
-        f.write(self.t_engine_board.substitute(t_engine_mapper_board))
+        f.write(self.t_engine_board_archive.substitute(t_engine_mapper_board))
         f.close()
         threads = list()
         page_counter += 1
