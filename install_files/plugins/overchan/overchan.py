@@ -1260,13 +1260,7 @@ class main(threading.Thread):
   def generate_board(self, group_id):
     threads_per_page = self.threads_per_page
     pages_per_board = self.pages_per_board
-    # FIXME: cache board_name, _unquoted, _full
-    full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
-    full_board_name = self.basicHTMLencode(full_board_name_unquoted)
-    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
-    board_name = full_board_name.split('.', 1)[1]
-    boardlist = list()
-    boardlist = ''.join(self.generate_bord_list(group_id))
+    boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(group_id)
     
     threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, threads_per_page * pages_per_board)).fetchone()[0])
     if self.enable_archive == True:
@@ -1303,7 +1297,7 @@ class main(threading.Thread):
         if generate_archive == True:
           pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
         t_engine_mapper_board['pagelist'] = ''.join(pagelist)
-        t_engine_mapper_board['boardlist'] = boardlist
+        t_engine_mapper_board['boardlist'] = ''.join(boardlist)
         t_engine_mapper_board['full_board'] = full_board_name_unquoted
         t_engine_mapper_board['board'] = board_name
         t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
@@ -1447,7 +1441,7 @@ class main(threading.Thread):
       if generate_archive == True:
         pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
       t_engine_mapper_board['pagelist'] = ''.join(pagelist)
-      t_engine_mapper_board['boardlist'] = boardlist
+      t_engine_mapper_board['boardlist'] = ''.join(boardlist)
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
       t_engine_mapper_board['board'] = board_name
       t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
@@ -1466,14 +1460,7 @@ class main(threading.Thread):
 
   def generate_archive(self, group_id):
     # Generate board list on top of page
-    # FIXME: cache board_name, _unquoted, _full
-    full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
-    full_board_name = self.basicHTMLencode(full_board_name_unquoted)
-    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
-    board_name = full_board_name.split('.', 1)[1]
-    boardlist = list()
-    boardlist = ''.join(self.generate_bord_list())
-
+    boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(group_id, True)
     # Get threads count offsetting threads in main board pages
     offset = self.threads_per_page * self.pages_per_board
     # we want anoter threads_per_page setting for archive pages
@@ -1504,7 +1491,7 @@ class main(threading.Thread):
           else:
             pagelist.append('[{0}] '.format(page))
         t_engine_mapper_board['pagelist'] = ''.join(pagelist)
-        t_engine_mapper_board['boardlist'] = boardlist
+        t_engine_mapper_board['boardlist'] = ''.join(boardlist)
         t_engine_mapper_board['full_board'] = full_board_name_unquoted
         t_engine_mapper_board['board'] = board_name
         t_engine_mapper_board['target'] =  "{0}-archive-1.html".format(board_name_unquoted)
@@ -1587,7 +1574,7 @@ class main(threading.Thread):
         else:
           pagelist.append('[{0}] '.format(page))
       t_engine_mapper_board['pagelist'] = ''.join(pagelist)
-      t_engine_mapper_board['boardlist'] = boardlist
+      t_engine_mapper_board['boardlist'] = ''.join(boardlist)
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
       t_engine_mapper_board['board'] = board_name
       t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
@@ -1599,14 +1586,8 @@ class main(threading.Thread):
       del threads
 
   def generate_recent(self, group_id):
-    # FIXME: cache board_name, _unquoted, _full
-    full_board_name_unquoted = self.sqlite.execute('SELECT group_name FROM groups WHERE group_id = ?', (group_id,)).fetchone()[0].replace('"', '').replace('/', '')
-    full_board_name = self.basicHTMLencode(full_board_name_unquoted)
-    board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
-    board_name = full_board_name.split('.', 1)[1]
-    boardlist = list()
-    boardlist = ''.join(self.generate_bord_list())
 
+    boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(group_id, True)
     threads = list()
 
     # get only freshly updated threads
@@ -1746,7 +1727,7 @@ class main(threading.Thread):
     self.log(self.logger.INFO, 'generating %s/%s-recent.html' % (self.output_directory, board_name_unquoted))
     t_engine_mapper_board_recent = dict()
     t_engine_mapper_board_recent['threads'] = ''.join(threads)
-    t_engine_mapper_board_recent['boardlist'] = boardlist
+    t_engine_mapper_board_recent['boardlist'] = ''.join(boardlist)
     t_engine_mapper_board_recent['full_board'] = full_board_name_unquoted
     t_engine_mapper_board_recent['board'] = board_name
     t_engine_mapper_board_recent['target'] =  "{0}-recent.html".format(board_name_unquoted)
@@ -1905,28 +1886,14 @@ class main(threading.Thread):
     t_engine_mappings_threads = dict()
     t_engine_mappings_threads['message_root'] = self.t_engine_message_root.substitute(t_engine_mappings_root)
     t_engine_mappings_threads['message_childs'] = ''.join(childs)
-    try:
-      flag_hidden = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="hidden"').fetchone()[0])
-    except:
-      self.log(self.logger.WARNING, 'invalid flag get for boardlist in thread')
-      flag_hidden = 0
-    boardlist = list()
-    # FIXME hold this list somewhere global and update on board add/remove/block/unblock
-    for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE \
-      blocked = 0 AND (group_id = ? or ((cast(groups.flags as integer) & ?) != ?)) ORDER by group_name ASC', (root_row[8], flag_hidden, flag_hidden)).fetchall():
-      current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
-      current_group_name_encoded = self.basicHTMLencode(current_group_name)
-      boardlist.append(' <a href="%s-1.html">%s</a> |' % (current_group_name, current_group_name_encoded))
-      if group_row[1] == root_row[8]:
-        full_group_name_unquoted = group_row[0].replace('"', '').replace('/', '')
-        full_group_name = self.basicHTMLencode(full_group_name_unquoted)
-    if boardlist: boardlist[-1] = boardlist[-1][:-1]
+
+    boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(root_row[8], True)
     t_engine_mappings_thread_single = dict()
     t_engine_mappings_thread_single['boardlist'] = ''.join(boardlist)
     t_engine_mappings_thread_single['thread_id'] = root_message_id_hash
-    t_engine_mappings_thread_single['board'] = full_group_name.split('.', 1)[1]
-    t_engine_mappings_thread_single['full_board'] = full_group_name_unquoted
-    t_engine_mappings_thread_single['target'] = "{0}-1.html".format(full_group_name.split('.', 1)[1])
+    t_engine_mappings_thread_single['board'] = board_name
+    t_engine_mappings_thread_single['full_board'] = full_board_name_unquoted
+    t_engine_mappings_thread_single['target'] = "{0}-1.html".format(board_name)
     t_engine_mappings_thread_single['subject'] = root_row[2][:60]
     t_engine_mappings_thread_single['thread_single'] = self.t_engine_board_threads.substitute(t_engine_mappings_threads)
 
@@ -1967,7 +1934,8 @@ class main(threading.Thread):
     f.write(self.t_engine_menu.substitute(t_engine_mappings_menu))
     f.close()
 
-  def generate_bord_list(self,group_id=""):
+  def generate_board_list(self, group_id='', selflink=False):
+    full_board_name_unquoted = full_board_name = board_name_unquoted = board_name = ''
     try:
       flag_hidden = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="hidden"').fetchone()[0])
     except:
@@ -1976,15 +1944,23 @@ class main(threading.Thread):
     boardlist = list()
     # FIXME: cache this shit somewhere
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups \
-      WHERE blocked = 0 AND ((cast(groups.flags as integer) & ?) != ?) ORDER by group_name ASC', (flag_hidden, flag_hidden)).fetchall():
+      WHERE blocked = 0 AND ((cast(flags as integer) & ?) != ? OR group_id = ?) ORDER by group_name ASC', (flag_hidden, flag_hidden, group_id)).fetchall():
       current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
       current_group_name_encoded = self.basicHTMLencode(current_group_name)
-      if group_row[1] != group_id:
+      if group_row[1] != group_id or selflink:
         boardlist.append(' <a href="%s-1.html">%s</a> |' % (current_group_name, current_group_name_encoded))
       else:
         boardlist.append(' ' + current_group_name_encoded + ' |')
+      if group_row[1] == group_id:
+        full_board_name_unquoted = group_row[0].replace('"', '').replace('/', '')
+        full_board_name = self.basicHTMLencode(full_board_name_unquoted)
+        board_name_unquoted = full_board_name_unquoted.split('.', 1)[1]
+        board_name = full_board_name.split('.', 1)[1]
     if boardlist: boardlist[-1] = boardlist[-1][:-1]
-    return boardlist
+    if group_id != '':
+      return boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name
+    else:
+      return boardlist
 
   def generate_overview(self):
     self.log(self.logger.INFO, 'generating %s/overview.html' % self.output_directory)
@@ -1994,9 +1970,8 @@ class main(threading.Thread):
       flag_nopost = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="no-overview"').fetchone()[0])
     except:
       self.log(self.logger.WARNING, 'invalid flag get for overview')
-      flag_hidden = 0
-      flag_nopost = 0
-    t_engine_mappings_overview['boardlist'] = ''.join(self.generate_bord_list())
+      flag_hidden = flag_nopost = 0
+    t_engine_mappings_overview['boardlist'] = ''.join(self.generate_board_list())
     row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (self.news_uid, )).fetchone()
     if not row:
       t_engine_mappings_overview['subject'] = ''
