@@ -885,17 +885,17 @@ class main(threading.Thread):
 
     return message
 
-  def move_invalid_article(self, message_id):
+  def move_censored_article(self, message_id):
     groups = list()
     group_rows = list()
     for row in self.dropperdb.execute('SELECT group_name, article_id from articles, groups WHERE message_id=? and groups.group_id = articles.group_id', (message_id,)).fetchall():
       group_rows.append((row[0], row[1]))
       groups.append(row[0])
-    if os.path.exists(os.path.join('articles', 'invalid', message_id)):
+    if os.path.exists(os.path.join('articles', 'censored', message_id)):
       self.log(self.logger.DEBUG, "already move, still handing over to redistribute further")
     elif os.path.exists(os.path.join("articles", message_id)):
-      self.log(self.logger.DEBUG, "moving %s to articles/invalid/" % message_id)
-      os.rename(os.path.join("articles", message_id), os.path.join("articles", "invalid", message_id))
+      self.log(self.logger.DEBUG, "moving %s to articles/censored/" % message_id)
+      os.rename(os.path.join("articles", message_id), os.path.join("articles", "censored", message_id))
       self.log(self.logger.DEBUG, "deleting groups/%s/%i" % (row[0], row[1]))
       for group in group_rows:
         try:
@@ -903,8 +903,8 @@ class main(threading.Thread):
           os.unlink(os.path.join("groups", str(group[0]), str(group[1])))
         except Exception as e:
           self.log(self.logger.WARNING, "could not delete %s: %s" % (os.path.join("groups", str(group[0]), str(group[1])), e))
-    elif not os.path.exists(os.path.join('articles', 'invalid', message_id)):
-      f = open(os.path.join('articles', 'invalid', message_id), 'w')
+    elif not os.path.exists(os.path.join('articles', 'censored', message_id)):
+      f = open(os.path.join('articles', 'censored', message_id), 'w')
       f.close()
     return True
 
@@ -1178,15 +1178,15 @@ class main(threading.Thread):
     message = self.basicHTMLencode(message)
 
     if (not subject or subject == 'None') and (message == image_name == public_key == '') and (parent and parent != message_id) and (not sender or sender == 'Anonymous'):
-      self.log(self.logger.INFO, 'ignoring empty child message  %s' % message_id)
-      return self.move_invalid_article(message_id)
+      self.log(self.logger.INFO, 'censored empty child message  %s' % message_id)
+      return self.move_censored_article(message_id)
     try:
       for group in groups:
         group_flags = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group,)).fetchone()[0])
         spam_flag  = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="spam-fix"').fetchone()[0])
         if ((group_flags & spam_flag) == spam_flag) and len(message) < 5:
-          self.log(self.logger.INFO, 'Spamprotect group %s, delete %s' % (group, message_id))
-          return self.move_invalid_article(message_id)
+          self.log(self.logger.INFO, 'Spamprotect group %s, censored %s' % (group, message_id))
+          return self.move_censored_article(message_id)
     except Exception as e:
       self.log(self.logger.INFO, 'spamfix group %s error message %s %s' % (group, message_id, e))
 
