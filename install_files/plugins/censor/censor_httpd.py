@@ -167,11 +167,27 @@ class censor(BaseHTTPRequestHandler):
     flags = post_vars.getlist("flags")
     result = 0
     if 'local_nick' in post_vars:
-      local_nick = post_vars['local_nick'].value
+      local_nick = post_vars['local_nick'].value.strip()
     else:
       local_nick = ''
     result = sum([int(flag) for flag in flags])
-    self.origin.censor.add_article((self.origin.sessions[self.session][1], "srnd-acl-mod %s %i %s" % (key, result, local_nick)), "httpd")
+    comment = ''
+    if int(self.origin.sqlite_censor.execute('SELECT count(id) FROM keys WHERE key = ?', (key,)).fetchone()[0]):
+      old_nick, old_flags = self.origin.sqlite_censor.execute('SELECT local_name, flags FROM keys WHERE key = ?', (key,)).fetchone()
+      if int(old_flags) != result:
+        comment  = '%s->%s ' % (old_flags, result)
+      if local_nick != old_nick:
+        comment += 'rename '
+        if local_nick != '':
+          comment += local_nick
+        else:
+          comment += key
+      if old_nick == '':
+        old_nick = key
+    else:
+      comment = 'add key, flags %s' % result
+    if comment == '': return
+    self.origin.censor.add_article((self.origin.sessions[self.session][1], "srnd-acl-mod %s %i %s#%s: %s" % (key, result, local_nick, old_nick, comment)), "httpd")
 
   def handle_update_board(self, board_id):
     post_vars = FieldStorage(
@@ -184,13 +200,19 @@ class censor(BaseHTTPRequestHandler):
     )
     flags = post_vars.getlist("flags")
     result = 0
-    if 'local_nick' in post_vars:
-      local_nick = post_vars['local_nick'].value
+    if 'board_name' in post_vars:
+      board_name = post_vars['board_name'].value
     else:
-      local_nick = ''
+      board_name = ''
     result = sum([int(flag) for flag in flags])
-    board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
-    self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s" % (board_name, result, local_nick)), "httpd")
+    old_board_name, old_flags = self.origin.sqlite_overchan.execute('SELECT group_name, flags FROM groups WHERE group_id = ?', (board_id,)).fetchone()
+    comment = ''
+    if int(old_flags) != result:
+      comment = '%s->%s ' % (old_flags, result)
+    if board_name != old_board_name and board_name != '':
+      comment += 'rename to %s' % board_name
+    if comment == '': return
+    self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s#%s: %s" % (old_board_name, result, board_name, old_board_name, comment)), "httpd")
 
   def check_login(self):
     current_date = int(time.time())
@@ -296,7 +318,7 @@ class censor(BaseHTTPRequestHandler):
     self.wfile.write(out)
 
   def send_modify_board(self, board_id):
-    row = self.origin.sqlite_overchan.execute("SELECT group_id, group_name, flags FROM groups WHERE group_id = ?", (board_id,)).fetchone()
+    row = self.origin.sqlite_overchan.execute("SELECT group_id, group_name, flags FROM groups WHERE group_id = ? OR group_name = ?", (board_id, board_id)).fetchone()
     if not row:
       return "Board id %s not found" % board_id
 
@@ -344,7 +366,7 @@ class censor(BaseHTTPRequestHandler):
     for row in self.origin.sqlite_censor.execute('SELECT key, local_name, flags FROM keys WHERE flags != 0 OR local_name != "" ORDER BY abs(flags) DESC, local_name ASC').fetchall():
       cur_template = self.origin.template_log_whitelist
       cur_template = cur_template.replace("%%key%%", row[0])
-      cur_template = cur_template.replace("%%nick%%", row[1])
+      cur_template = cur_template.replace("%%nick%%", self.hidden_line(row[1], 30))
       #table.append(self.origin.template_log_flagset)
       for flag in flags:
         if (int(row[2]) & int(flag[1])) == int(flag[1]):
@@ -362,7 +384,7 @@ class censor(BaseHTTPRequestHandler):
       cur_template = self.origin.template_log_unknown
       cur_template = cur_template.replace("%%key%%", row[1])
       if row[0] != "":
-        cur_template = cur_template.replace("%%nick%%", row[0])
+        cur_template = cur_template.replace("%%nick%%", self.hidden_line(row[0], 30))
       else:
         cur_template = cur_template.replace("%%nick%%", "&nbsp;")
       count = self.origin.sqlite_censor.execute("SELECT count(data) FROM log WHERE key_id = ?", (row[3],)).fetchone()
@@ -375,6 +397,12 @@ class censor(BaseHTTPRequestHandler):
     self.send_header('Content-type', 'text/html')
     self.end_headers()
     self.wfile.write(out)
+
+  def hidden_line(self, line, max_len = 60):
+    if max_len > 16 and len(line) > max_len:
+      return '%s[..]%s' % (line[:6], line[-6:])
+    else:
+      return line
 
   def send_log(self, page=1, pagecount=100):
     out = self.origin.template_log
@@ -390,15 +418,28 @@ class censor(BaseHTTPRequestHandler):
     for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 1 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC LIMIT ?, ?", ((page-1)*pagecount, pagecount)).fetchall():
       cur_template = self.origin.template_log_accepted
       if row[1] != "":
-        cur_template = cur_template.replace("%%key_or_nick%%", row[1])
+        cur_template = cur_template.replace("%%key_or_nick%%", self.hidden_line(row[1], 30))
       else:
-        cur_template = cur_template.replace("%%key_or_nick%%", '%s[..]%s' % (row[0][:6], row[0][-6:]))
+        cur_template = cur_template.replace("%%key_or_nick%%", self.hidden_line(row[0]))
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%action%%", row[2])
       cur_template = cur_template.replace("%%reason%%", row[4])
       cur_template = cur_template.replace("%%date%%", datetime.utcfromtimestamp(row[6]).strftime('%Y/%m/%d %H:%M'))
-      if row[2] != 'delete' and row[2] != 'overchan-delete-attachment':
-        cur_template = cur_template.replace("%%postid%%", row[3].replace("<", "&lt;").replace(">", "&gt;"))
+      if row[5] != '':
+        data_list  = [self.hidden_line(x, 30)  for x in row[5].replace("<", "&lt;").replace(">", "&gt;").split(' ')]
+        data = " ".join(data_list)
+      else:
+        data = row[3].replace("<", "&lt;").replace(">", "&gt;")
+      if row[2] == 'srnd-acl-mod':
+        cur_template = cur_template.replace("%%postid%%", data)
+        cur_template = cur_template.replace("%%restore_link%%", '<a href="modify?%s">modify key</a>' % (row[3]))
+        cur_template = cur_template.replace("%%delete_link%%", '')
+      elif row[2] == 'overchan-board-mod':
+        cur_template = cur_template.replace("%%postid%%", data)
+        cur_template = cur_template.replace("%%restore_link%%", '<a href="settings?%s">modify board</a>' % (row[3]))
+        cur_template = cur_template.replace("%%delete_link%%", '')
+      elif row[2] != 'delete' and row[2] != 'overchan-delete-attachment':
+        cur_template = cur_template.replace("%%postid%%", data)
         cur_template = cur_template.replace("%%restore_link%%", '')
         cur_template = cur_template.replace("%%delete_link%%", '')
       else:
@@ -433,9 +474,9 @@ class censor(BaseHTTPRequestHandler):
     for row in self.origin.sqlite_censor.execute("SELECT key, local_name, command, data, reason, comment, timestamp FROM log, commands, keys, reasons WHERE log.accepted = 0 AND keys.id = log.key_id AND commands.id = log.command_id AND reasons.id = log.reason_id ORDER BY log.id DESC LIMIT ?, ?", ((page-1)*pagecount, pagecount)).fetchall():
       cur_template = self.origin.template_log_ignored
       if row[1] != "":
-        cur_template = cur_template.replace("%%key_or_nick%%", row[1])
+        cur_template = cur_template.replace("%%key_or_nick%%", self.hidden_line(row[1], 30))
       else:
-        cur_template = cur_template.replace("%%key_or_nick%%", '%s[..]%s' % (row[0][:6], row[0][-6:]))
+        cur_template = cur_template.replace("%%key_or_nick%%", self.hidden_line(row[0]))
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%action%%", row[2])
       message_id = row[3].replace("<", "&lt;").replace(">", "&gt;")

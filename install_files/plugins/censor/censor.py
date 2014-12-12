@@ -60,7 +60,7 @@ class main(threading.Thread):
     self.log(self.logger.DEBUG, 'initializing censor_httpd..')
     args['censor'] = self
     self.httpd = censor_httpd.censor_httpd("censor_httpd", self.logger, args)
-    self.db_version = 4
+    self.db_version = 5
     self.all_flags = "1023"
     self.queue = Queue.Queue()
     self.command_mapper = dict()
@@ -143,6 +143,14 @@ class main(threading.Thread):
       self.censordb.execute('INSERT INTO commands (command, flag) VALUES (?,?)', ("overchan-board-mod", str(0b1000000000)))
       self.censordb.execute('UPDATE config SET value = "4" WHERE key = "db_version"')
       self.sqlite_censor_conn.commit()
+      current_version = 4
+    if current_version == 4:
+      self.log(self.logger.INFO, "updating db from version %i to version %i" % (current_version, 5))
+      self.censordb.execute("DROP TABLE log")
+      self.censordb.execute("CREATE TABLE log (id INTEGER PRIMARY KEY, command_id INTEGER, accepted INTEGER, data TEXT, key_id INTEGER, reason_id INTEGER, comment TEXT, timestamp INTEGER, UNIQUE(key_id, command_id, data, comment))")
+      self.censordb.execute('UPDATE config SET value = "5" WHERE key = "db_version"')
+      self.sqlite_censor_conn.commit()
+      current_version = 5
 
   def run(self):
     #if self.should_terminate:
@@ -456,8 +464,13 @@ class main(threading.Thread):
 
   def handle_srnd_acl_mod(self, line):
     self.log(self.logger.DEBUG, "handle acl_mod: %s" % line)
+    flags = '0'
+    local_nick = ''
     try:
-      key, flags, local_nick = line.split(" ", 3)[1:]
+      row = line.split(" ", 3)[1:]
+      key = row[0]
+      if len(row) > 1: flags = row[1]
+      if len(row) > 2: local_nick = row[2]
       if int(self.censordb.execute('SELECT count(key) FROM keys WHERE key = ?', (key,)).fetchone()[0]) == 0:
         self.log(self.logger.DEBUG, "handle acl_mod: new key")
         self.censordb.execute("INSERT INTO keys (key, local_name, flags) VALUES (?, ?, ?)", (key, local_nick, flags))
