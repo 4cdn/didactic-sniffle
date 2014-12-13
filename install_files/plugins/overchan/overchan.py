@@ -400,7 +400,7 @@ class main(threading.Thread):
     # ^ hardlinks not gonna work because of remote filesystems
     # ^ softlinks not gonna work because of nginx chroot
     # ^ => cp
-    self.copy_out((self.css_file, 'styles.css'),('user.css', 'user.css'),(self.no_file, os.path.join('img', self.no_file)),)
+    self.copy_out((self.css_file, 'styles.css'),('user.css', 'user.css'),(self.no_file, os.path.join('img', self.no_file)),('suicide.txt', 'suicide.txt'),)
     self.gen_thumbs(self.invalid_file, self.document_file, self.audio_file, self.webm_file, self.no_file)
 
     self.regenerate_boards = list()
