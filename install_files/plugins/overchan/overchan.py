@@ -356,6 +356,34 @@ class main(threading.Thread):
     self.past_init()
     return True
 
+  def gen_thumbs(self, *sources):
+    for source in sources:
+      link = os.path.join(self.output_directory, 'thumbs', source)
+      if not os.path.exists(link):
+        try:
+          something = Image.open(os.path.join(self.template_directory, source))
+          modifier = float(180) / something.size[0]
+          x = int(something.size[0] * modifier)
+          y = int(something.size[1] * modifier)
+          if not (something.mode == 'RGBA' or something.mode == 'LA'):
+            something = something.convert('RGB')
+          something = something.resize((x,y), Image.ANTIALIAS)
+          something.save(link, optimize=True)
+          del something
+        except IOError as e:
+          self.log(self.logger.ERROR, 'can\'t thumb save %s. wtf? %s' % (link, e))
+
+  def copy_out(self, *sources):
+    for source, target in sources:
+      try:
+        i = open(os.path.join(self.template_directory, source), 'r')
+        o = open(os.path.join(self.output_directory, target), 'w')
+        o.write(i.read())
+        o.close()
+        i.close()
+      except IOError as e:
+        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
+
   def past_init(self):
     required_dirs = list()
     required_dirs.append(self.output_directory)
@@ -372,76 +400,9 @@ class main(threading.Thread):
     # ^ hardlinks not gonna work because of remote filesystems
     # ^ softlinks not gonna work because of nginx chroot
     # ^ => cp
-    # FIXME messy code is messy
-    for file_source, file_target in (
-        (self.css_file, 'styles.css'),
-        ('user.css', 'user.css'),
-        (self.no_file, os.path.join('img', self.no_file)),
-        (self.no_file, os.path.join('thumbs', self.no_file)),
-      ):
-        i = open(os.path.join(self.template_directory, file_source), 'r')
-        o = open(os.path.join(self.output_directory, file_target), 'w')
-        o.write(i.read())
-        o.close()
-        i.close()
+    self.copy_out((self.css_file, 'styles.css'),('user.css', 'user.css'),(self.no_file, os.path.join('img', self.no_file)),)
+    self.gen_thumbs(self.invalid_file, self.document_file, self.audio_file, self.webm_file, self.no_file)
 
-    # TODO: generate gen_thumbnail(source, dest) returning true/false
-    link = os.path.join(self.output_directory, 'thumbs', self.invalid_file)
-    if not os.path.exists(link):
-      try:
-        something = Image.open(os.path.join(self.template_directory, self.invalid_file))
-        modifier = float(180) / something.size[0]
-        x = int(something.size[0] * modifier)
-        y = int(something.size[1] * modifier)
-        if not (something.mode == 'RGBA' or something.mode == 'LA'):
-          something = something.convert('RGB')
-        something = something.resize((x,y), Image.ANTIALIAS)
-        something.save(link, optimize=True)
-        del something
-      except IOError as e:
-        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
-    link = os.path.join(self.output_directory, 'thumbs', self.document_file)
-    if not os.path.exists(link):
-      try:
-        something = Image.open(os.path.join(self.template_directory, self.document_file))
-        modifier = float(180) / something.size[0]
-        x = int(something.size[0] * modifier)
-        y = int(something.size[1] * modifier)
-        if not (something.mode == 'RGBA' or something.mode == 'LA'):
-          something = something.convert('RGB')
-        something = something.resize((x,y), Image.ANTIALIAS)
-        something.save(link, optimize=True)
-        del something
-      except IOError as e:
-        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
-    link = os.path.join(self.output_directory, 'thumbs', self.audio_file)
-    if not os.path.exists(link):
-      try:
-        something = Image.open(os.path.join(self.template_directory, self.audio_file))
-        modifier = float(180) / something.size[0]
-        x = int(something.size[0] * modifier)
-        y = int(something.size[1] * modifier)
-        if not (something.mode == 'RGBA' or something.mode == 'LA'):
-          something = something.convert('RGB')
-        something = something.resize((x,y), Image.ANTIALIAS)
-        something.save(link, optimize=True)
-        del something
-      except IOError as e:
-        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
-    link = os.path.join(self.output_directory, 'thumbs', self.webm_file)
-    if not os.path.exists(link):
-      try:
-        something = Image.open(os.path.join(self.template_directory, self.webm_file))
-        modifier = float(180) / something.size[0]
-        x = int(something.size[0] * modifier)
-        y = int(something.size[1] * modifier)
-        if not (something.mode == 'RGBA' or something.mode == 'LA'):
-          something = something.convert('RGB')
-        something = something.resize((x,y), Image.ANTIALIAS)
-        something.save(link, optimize=True)
-        del something
-      except IOError as e:
-        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
     self.regenerate_boards = list()
     self.regenerate_threads = list()
     self.missing_parents = dict()
