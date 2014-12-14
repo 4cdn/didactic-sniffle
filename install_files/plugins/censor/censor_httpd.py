@@ -45,14 +45,11 @@ class censor(BaseHTTPRequestHandler):
         self.send_login("totally not")
       return
     elif self.path.startswith("/moderate"):
-      if self.path[10:58] not in self.origin.sessions:
+      if not self.legal_session(self.path[10:58]):
         self.send_login()
         return
       self.session = self.path[10:58]
       self.root_path = self.path[:58] + '/' 
-      if self.origin.sessions[self.session][0] < int(time.time()):
-        self.send_login()
-        return
       self.origin.sessions[self.session][0] = int(time.time()) + 3600
       path = self.path[58:]
       if path.startswith('/modify?'):
@@ -99,16 +96,11 @@ class censor(BaseHTTPRequestHandler):
       self.send_error("secret: %s\npublic: %s" % (hexlify(secret), hexlify(public)))
       return
     elif self.path.startswith("/moderate"):
-      if self.path[10:58] not in self.origin.sessions:
+      if not self.legal_session(self.path[10:58]):
         self.send_login()
         return
       self.session = self.path[10:58]
       self.root_path = self.path[:58] + '/' 
-      if self.origin.sessions[self.session][0] < int(time.time()):
-        #del self.sessions[self.session]
-        # FIXME: test ^
-        self.send_login()
-        return
       self.origin.sessions[self.session][0] = int(time.time()) + 3600
       path = self.path[58:]
       if path.startswith('/modify?'):
@@ -207,6 +199,13 @@ class censor(BaseHTTPRequestHandler):
       comment += ' change flag %s->%s' % (old_flags, result)
     if comment == '#': comment = ''
     self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s%s" % (old_board_name, result, board_name, comment)), "httpd")
+
+  def legal_session (self, session_id):
+    if session_id in self.origin.sessions:
+      if self.origin.sessions[session_id][0] => int(time.time()):
+        return True
+      del self.origin.sessions[session_id]
+    return False
 
   def check_login(self):
     current_date = int(time.time())
