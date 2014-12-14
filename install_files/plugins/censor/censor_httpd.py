@@ -39,7 +39,7 @@ class censor(BaseHTTPRequestHandler):
       public = self.check_login() 
       if public:
         session = hexlify(self.origin.rnd.read(24))
-        self.origin.sessions[session] = [int(time.time()) + 3600, public]
+        self.origin.sessions[session] = [int(time.time()) + 3600, public, self.get_senderhash()]
         self.send_redirect('/moderate/%s/' % session, 'access granted. this time.')
       else:
         self.send_login("totally not")
@@ -200,9 +200,19 @@ class censor(BaseHTTPRequestHandler):
     if comment == '#': comment = ''
     self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s%s" % (old_board_name, result, board_name, comment)), "httpd")
 
+  def get_senderhash(self):
+    if 'X-I2P-DestHash' in self.headers:
+      return sha512(self.headers['X-I2P-DestHash'] + self.origin.runtime_salt).hexdigest()[:32]
+    elif False:
+      return sha512('TODO: add tor desthash or remove this' + self.origin.runtime_salt).hexdigest()[:32]
+    return sha512(self.client_address[0] + self.origin.runtime_salt).hexdigest()[:32]
+
   def legal_session (self, session_id):
     if session_id in self.origin.sessions:
-      if self.origin.sessions[session_id][0] => int(time.time()):
+      if self.origin.sessions[session_id][2] != self.get_senderhash():
+        self.origin.log(self.origin.logger.WARNING, 'Destanation change! Maybe sessionkey leak. ')
+        self.origin.log(self.origin.logger.WARNING, self.headers)
+      elif self.origin.sessions[session_id][0] > int(time.time()):
         return True
       del self.origin.sessions[session_id]
     return False
@@ -1061,6 +1071,7 @@ class censor_httpd(threading.Thread):
     self.httpd.censor = args['censor']
     self.httpd.weekdays =  ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
     self.httpd.breaker = re.compile('([^ ]{16})')
+    self.httpd.runtime_salt = self.httpd.rnd.read(8)
 
     # read templates
     self.log(self.logger.DEBUG, 'reading templates..')
