@@ -438,6 +438,7 @@ class main(threading.Thread):
       self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("moder-posts",  str(0b100000)))
       self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-sync",      str(0b1000000)))
       self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("spam-fix",     str(0b10000000)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-archive",   str(0b100000000)))
       #self.censordb.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("srnd-acl-mod",               str(0b100000000)))
     except:
       pass
@@ -1221,9 +1222,9 @@ class main(threading.Thread):
     threads_per_page = self.threads_per_page
     pages_per_board = self.pages_per_board
     boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(group_id)
-    
+
     threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ?)', (group_id, threads_per_page * pages_per_board)).fetchone()[0])
-    if self.enable_archive == True:
+    if self.enable_archive and ((int(self.sqlite.execute("SELECT flags FROM groups WHERE group_id=?", (group_id,)).fetchone()[0]) & self.cache['flags']['no-archive']) != self.cache['flags']['no-archive']):
       total_thread_count = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid))', (group_id,)).fetchone()[0])
       if total_thread_count > threads:
         generate_archive = True
