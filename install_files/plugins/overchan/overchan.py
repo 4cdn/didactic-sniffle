@@ -1248,15 +1248,7 @@ class main(threading.Thread):
         self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
         t_engine_mapper_board = dict()
         t_engine_mapper_board['threads'] = ''.join(threads)
-        pagelist = list()
-        for page in xrange(1, pages + 1):
-          if page != page_counter:
-            pagelist.append('<a href="{0}-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
-          else:
-            pagelist.append('[{0}] '.format(page))
-        if generate_archive == True:
-          pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
-        t_engine_mapper_board['pagelist'] = ''.join(pagelist)
+        t_engine_mapper_board['pagelist'] = ''.join(self.generate_pagelist(pages, page_counter, board_name_unquoted, generate_archive))
         t_engine_mapper_board['boardlist'] = ''.join(boardlist)
         t_engine_mapper_board['full_board'] = full_board_name_unquoted
         t_engine_mapper_board['board'] = board_name
@@ -1392,15 +1384,7 @@ class main(threading.Thread):
       self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
       t_engine_mapper_board = dict()
       t_engine_mapper_board['threads'] = ''.join(threads)
-      pagelist = list()
-      for page in xrange(1, pages + 1):
-        if page != page_counter:
-          pagelist.append('<a href="{0}-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
-        else:
-          pagelist.append('[{0}] '.format(page))
-      if generate_archive == True:
-        pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
-      t_engine_mapper_board['pagelist'] = ''.join(pagelist)
+      t_engine_mapper_board['pagelist'] = ''.join(self.generate_pagelist(pages, page_counter, board_name_unquoted, generate_archive))
       t_engine_mapper_board['boardlist'] = ''.join(boardlist)
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
       t_engine_mapper_board['board'] = board_name
@@ -1408,7 +1392,6 @@ class main(threading.Thread):
       f = codecs.open(os.path.join(self.output_directory, '{0}-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
       f.write(self.t_engine_board.substitute(t_engine_mapper_board))
       f.close()
-      del pagelist
       del boardlist
       del threads
     #Fix archive generation
