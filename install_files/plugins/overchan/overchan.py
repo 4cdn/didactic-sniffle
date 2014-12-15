@@ -740,16 +740,19 @@ class main(threading.Thread):
       pub_short += '&#%i;' % (9600 + int(full_pubkey_hex[-(length*2):][x*2:x*2+2], 16))
     return pub_short
 
-  def pubkey_to_name (self, full_pubkey_hex, root_full_pubkey_hex='', sender='', root_sender=''):
-    op_flag = nickname = ''
+  def get_moder_name (self, full_pubkey_hex):
     try:
-      local_name = self.censordb.execute('SELECT local_name from keys WHERE key=? and local_name != ""', (full_pubkey_hex,)).fetchone()
+      return self.censordb.execute('SELECT local_name from keys WHERE key=? and local_name != ""', (full_pubkey_hex,)).fetchone()
     except:
-      local_name=''
+      return ''
+
+  def pubkey_to_name (self, full_pubkey_hex, root_full_pubkey_hex='', sender=''):
+    op_flag = nickname = ''
+    local_name = self.get_moder_name(full_pubkey_hex)
     if full_pubkey_hex == root_full_pubkey_hex:
       op_flag = '<span class="op-kyn">OP</span> '
       nickname = sender
-    if local_name:
+    if local_name != '':
       nickname = '<span class="zoi">%s</span>' % (local_name)
     return '%s%s' % (op_flag, nickname)
 
@@ -1347,7 +1350,7 @@ class main(threading.Thread):
             pubkey=child_row[8],
             pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
           )
-          moder_name = self.pubkey_to_name(child_row[8], root_row[8], child_row[1], root_row[1])
+          moder_name = self.pubkey_to_name(child_row[8], root_row[8], child_row[1])
         else:
           t_engine_mapper_child['signed'] = ''
         
@@ -1640,7 +1643,7 @@ class main(threading.Thread):
               pubkey=child_row[8],
               pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
             )
-            moder_name = self.pubkey_to_name(child_row[8], root_row[8], child_row[1], root_row[1])
+            moder_name = self.pubkey_to_name(child_row[8], root_row[8], child_row[1])
           else:
             t_engine_mapper_child['signed'] = ''
         else:
@@ -1817,7 +1820,7 @@ class main(threading.Thread):
           pubkey=child_row[8],
           pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
         )
-        moder_name = self.pubkey_to_name(child_row[8], root_row[9], child_row[1], root_row[1])
+        moder_name = self.pubkey_to_name(child_row[8], root_row[9], child_row[1])
       else:
         t_engine_mappings_child['signed'] = ''
       t_engine_mappings_child['parenthash'] = root_message_id_hash[:10]
