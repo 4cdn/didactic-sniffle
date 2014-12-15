@@ -429,19 +429,18 @@ class main(threading.Thread):
     # TODO add some flag like ability to carry different data for groups like (removed + added manually + public + hidden + whatever)
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS flags
                (flag_id INTEGER PRIMARY KEY AUTOINCREMENT, flag_name text UNIQUE, flag text)''')
-    try:
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("blocked",      str(0b1)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("hidden",       str(0b10)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-overview",  str(0b100)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("closed",       str(0b1000)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("moder-thread", str(0b10000)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("moder-posts",  str(0b100000)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-sync",      str(0b1000000)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("spam-fix",     str(0b10000000)))
-      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-archive",   str(0b100000000)))
-      #self.censordb.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("srnd-acl-mod",               str(0b100000000)))
-    except:
-      pass
+
+    insert_flags = (("blocked",      0b1),        ("hidden",      0b10),
+                    ("no-overview",  0b100),      ("closed",      0b1000),
+                    ("moder-thread", 0b10000),    ("moder-posts", 0b100000),
+                    ("no-sync",      0b1000000),  ("spam-fix",    0b10000000),
+                    ("no-archive",   0b100000000),)
+    for flag_name, flag in insert_flags:
+      try:
+        self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', (flag_name, str(flag)))
+      except:
+        pass
+
     try:
       self.sqlite.execute('ALTER TABLE groups ADD COLUMN flags text DEFAULT "0"')
     except:
