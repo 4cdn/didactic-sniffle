@@ -334,7 +334,7 @@ class main(threading.Thread):
       del something
       os.remove(out)
     except IOError as e:
-      self.die('error: can\'t load PIL library, err %s', e)
+      self.die('error: can\'t load PIL library, err %s' %  e)
       return False
     self.queue = Queue.Queue()
     return True
@@ -382,7 +382,7 @@ class main(threading.Thread):
         o.close()
         i.close()
       except IOError as e:
-        self.log(self.logger.ERROR, 'can\'t save %s. wtf? %s' % (link, e))
+        self.log(self.logger.ERROR, 'can\'t copy %s: %s' % (source, e))
 
   def past_init(self):
     required_dirs = list()
