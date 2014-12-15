@@ -1414,12 +1414,80 @@ class main(threading.Thread):
     #Fix archive generation
     if generate_archive and (not self.cache['last_thread'].has_key(group_id) or self.cache['last_thread'][group_id] != root_message_id_hash):
       self.cache['last_thread'][group_id] = root_message_id_hash
-      self.generate_archive(group_id) 
+      self.generate_archive(group_id)
     if self.enable_recent:
       self.generate_recent(group_id)
 
+  def get_root_post(self, data, group_id, child_view=0):
+    #0 - article_uid 1- sender 2 - subject 3 - sent 4 - message 5 - imagename 6 - imagelink 7 - thumblink -8 public_key
+    message_id_hash = sha1(data[0]).hexdigest()
+    parsed_data = dict()
+    if data[6] != '':
+        root_imagelink = data[6]
+        if data[7] == 'document':
+          root_thumblink = self.document_file
+        elif data[7] == 'invalid':
+          root_thumblink = self.invalid_file
+        elif data[7] == 'audio':
+          root_thumblink = self.audio_file
+        elif data[7] == 'video':
+          root_thumblink = self.webm_file
+        else:
+          root_thumblink = data[7]
+    else:
+      root_imagelink = root_thumblink = self.no_file
+    if data[8] != '':
+      parsed_data['signed'] = self.t_engine_signed.substitute(
+        articlehash=message_id_hash[:10],
+        pubkey=data[8],
+        pubkey_short=self.generate_pubkey_short_utf_8(data[8])
+      )
+      author = self.pubkey_to_name(data[8])
+      if author == '': author = data[1]
+    else:
+      parsed_data['signed'] = ''
+      author = data[1]
+    if len(data[4].split('\n')) > 20:
+      message = '\n'.join(data[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % message_id_hash[:10]
+    elif len(data[4]) > 2000:
+      message = data[4][:2000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % message_id_hash[:10]
+    else:
+      message = data[4]
+    message = self.markup_parser(message)
+    child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (data[0], group_id)).fetchone()[0])
+    if child_count > child_view:
+      missing = child_count - child_view
+    else:
+      missing = 0
+    if missing > 0:
+      if missing == 1:
+        post = "post"
+      else:
+        post = "posts"
+      message += '\n\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(message_id_hash[:10], missing, post)
+    parsed_data['frontend'] = self.frontend(data[0])
+    parsed_data['message'] = message
+    parsed_data['articlehash'] = message_id_hash[:10]
+    parsed_data['articlehash_full'] = message_id_hash
+    parsed_data['author'] = author
+    parsed_data['subject'] = data[2]
+    parsed_data['sent'] = datetime.utcfromtimestamp(data[3]).strftime('%d.%m.%Y (%a) %H:%M')
+    parsed_data['imagelink'] = root_imagelink
+    parsed_data['thumblink'] = root_thumblink
+    parsed_data['imagename'] =  data[5]
+    return parsed_data
+
+  def generate_pagelist(self, count, current, board_name_unquoted, archive_link=False):
+    pagelist = list()
+    for page in xrange(1, count + 1):
+      if page != current:
+        pagelist.append('<a href="{0}-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
+      else:
+        pagelist.append('[{0}] '.format(page))
+    if archive_link: pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
+    return pagelist
+
   def generate_archive(self, group_id):
-    # Generate board list on top of page
     boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(group_id, True)
     # Get threads count offsetting threads in main board pages
     offset = self.threads_per_page * self.pages_per_board
@@ -1429,121 +1497,29 @@ class main(threading.Thread):
     threads = int(self.sqlite.execute('SELECT count(group_id) FROM (SELECT group_id FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) LIMIT ? OFFSET ?)', (group_id, threads_per_page * pages_per_board, offset)).fetchone()[0])
     pages = int(threads / threads_per_page)
     if threads % threads_per_page != 0:
-      pages += 1;
-    thread_counter = 0
-    page_counter = 1
-    threads = list()
+      pages += 1
 
-    # Get all root posts
-    for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ? OFFSET ?', (group_id, threads_per_page * pages_per_board, offset)).fetchall():
-      t_engine_mapper_root = dict()
-      root_message_id_hash = sha1(root_row[0]).hexdigest()
-      moder_name = ''
-      isvid = False
-      if thread_counter == threads_per_page:
-        self.log(self.logger.INFO, 'generating %s/%s-archive-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
-        t_engine_mapper_board = dict()
-        t_engine_mapper_board['threads'] = ''.join(threads)
-        pagelist = list()
-        for page in xrange(1, pages + 1):
-          if page != page_counter:
-            pagelist.append('<a href="{0}-archive-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
-          else:
-            pagelist.append('[{0}] '.format(page))
-        t_engine_mapper_board['pagelist'] = ''.join(pagelist)
-        t_engine_mapper_board['boardlist'] = ''.join(boardlist)
-        t_engine_mapper_board['full_board'] = full_board_name_unquoted
-        t_engine_mapper_board['board'] = board_name
-        t_engine_mapper_board['target'] =  "{0}-archive-1.html".format(board_name_unquoted)
-        f = codecs.open(os.path.join(self.output_directory, '{0}-archive-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
-        f.write(self.t_engine_board_archive.substitute(t_engine_mapper_board))
-        f.close()
-        threads = list()
-        page_counter += 1
-        thread_counter = 0
-      thread_counter += 1
-      if root_row[6] != '':
-        root_imagelink = root_row[6]
-        if root_row[7] == 'document':
-          root_thumblink = self.document_file
-        elif root_row[7] == 'invalid':
-          root_thumblink = self.invalid_file
-        elif root_row[7] == 'audio':
-          root_thumblink = self.audio_file
-        elif root_row[7] == 'video':
-          root_thumblink = self.webm_file
-          isvid = True
-        else:
-          root_thumblink = root_row[7]
-      else:
-        root_imagelink = self.no_file
-        root_thumblink = self.no_file
-      if root_row[8]:
-        if root_row[8] != '':
-          t_engine_mapper_root['signed'] = self.t_engine_signed.substitute(
-            articlehash=root_message_id_hash[:10],
-            pubkey=root_row[8],
-            pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
+    for board in xrange(1, pages + 1):
+      board_offset = threads_per_page * (board - 1) + offset
+      threads = list()
+      for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM \
+        articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ? OFFSET ?', (group_id, threads_per_page, board_offset)).fetchall():
+        threads.append(
+          self.t_engine_archive_threads.substitute(
+            message_root=self.t_engine_message_root.substitute(self.get_root_post(root_row, group_id))
           )
-          moder_name = self.pubkey_to_name(root_row[8])
-        else:
-          t_engine_mapper_root['signed'] = ''
-      else:
-        t_engine_mapper_root['signed'] = ''
-      if len(root_row[4].split('\n')) > 20:
-        message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
-      elif len(root_row[4]) > 2000:
-        message = root_row[4][:2000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
-      else:
-        message = root_row[4]
-      message = self.markup_parser(message)
-      #if isvid:
-      #  message = ('<video src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
-      child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], group_id)).fetchone()[0])
-      if child_count > 4: missing = child_count - 4
-      else: missing = 0
-      if missing > 0:
-        if missing == 1: post = "post"
-        else: post = "posts"
-        message += '\n\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
-      t_engine_mapper_root['frontend'] = self.frontend(root_row[0])
-      t_engine_mapper_root['message'] = message
-      t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
-      t_engine_mapper_root['articlehash_full'] = root_message_id_hash
-      if moder_name: t_engine_mapper_root['author'] = moder_name
-      else: t_engine_mapper_root['author'] = root_row[1]
-      t_engine_mapper_root['subject'] = root_row[2]
-      t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
-      t_engine_mapper_root['imagelink'] = root_imagelink
-      t_engine_mapper_root['thumblink'] = root_thumblink
-      t_engine_mapper_root['imagename'] =  root_row[5]
-
-      threads.append(
-        self.t_engine_archive_threads.substitute(
-          message_root=self.t_engine_message_root.substitute(t_engine_mapper_root)
         )
-      )
-    if thread_counter > 0 or (page_counter == 1 and thread_counter == 0):
-      self.log(self.logger.INFO, 'generating %s/%s-archive-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
+      self.log(self.logger.INFO, 'generating %s/%s-archive-%s.html' % (self.output_directory, board_name_unquoted, board))
       t_engine_mapper_board = dict()
       t_engine_mapper_board['threads'] = ''.join(threads)
-      pagelist = list()
-      for page in xrange(1, pages + 1):
-        if page != page_counter:
-          pagelist.append('<a href="{0}-archive-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
-        else:
-          pagelist.append('[{0}] '.format(page))
-      t_engine_mapper_board['pagelist'] = ''.join(pagelist)
+      t_engine_mapper_board['pagelist'] = ''.join(self.generate_pagelist(pages, board, board_name_unquoted+'-archive'))
       t_engine_mapper_board['boardlist'] = ''.join(boardlist)
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
       t_engine_mapper_board['board'] = board_name
-      t_engine_mapper_board['target'] =  "{0}-1.html".format(board_name_unquoted)
-      f = codecs.open(os.path.join(self.output_directory, '{0}-archive-{1}.html'.format(board_name_unquoted, page_counter)), 'w', 'UTF-8')
+      t_engine_mapper_board['target'] =  "{0}-archive-1.html".format(board_name_unquoted)
+      f = codecs.open(os.path.join(self.output_directory, '{0}-archive-{1}.html'.format(board_name_unquoted, board)), 'w', 'UTF-8')
       f.write(self.t_engine_board_archive.substitute(t_engine_mapper_board))
       f.close()
-      del pagelist
-      del boardlist
-      del threads
 
   def generate_recent(self, group_id):
 
