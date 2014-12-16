@@ -744,7 +744,7 @@ class main(threading.Thread):
     try:
       return self.censordb.execute('SELECT local_name from keys WHERE key=? and local_name != ""', (full_pubkey_hex,)).fetchone()
     except:
-      return ''
+      return None
 
   def pubkey_to_name (self, full_pubkey_hex, root_full_pubkey_hex='', sender=''):
     op_flag = nickname = ''
@@ -752,7 +752,7 @@ class main(threading.Thread):
     if full_pubkey_hex == root_full_pubkey_hex:
       op_flag = '<span class="op-kyn">OP</span> '
       nickname = sender
-    if local_name != '':
+    if local_name is not None and local_name != '':
       nickname = '<span class="zoi">%s</span>' % (local_name)
     return '%s%s' % (op_flag, nickname)
 
