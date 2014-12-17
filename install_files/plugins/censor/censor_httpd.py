@@ -187,18 +187,19 @@ class censor(BaseHTTPRequestHandler):
     flags = post_vars.getlist("flags")
     result = 0
     if 'board_name' in post_vars:
-      board_name = post_vars['board_name'].value.replace("<", "&lt;").replace(">", "&gt;").strip()
+      new_board = post_vars['board_name'].value.replace("<", "&lt;").replace(">", "&gt;").replace("#", "-").strip().lower()
+      if new_board != '' and not new_board.startswith('overchan.'):
+        new_board = 'overchan.' + new_board
     else:
-      board_name = ''
+      new_board = ''
     result = sum([int(flag) for flag in flags])
-    old_board_name, old_flags = self.origin.sqlite_overchan.execute('SELECT group_name, flags FROM groups WHERE group_id = ?', (board_id,)).fetchone()
-    comment = '#'
-    if board_name != old_board_name and board_name != '':
-      comment += '%s rename to %s ' % (old_board_name, board_name)
-    if int(old_flags) != result:
-      comment += ' change flag %s->%s' % (old_flags, result)
-    if comment == '#': comment = ''
-    self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s%s" % (old_board_name, result, board_name, comment)), "httpd")
+    if new_board != '' and board_id == 'new':
+      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-add {0} {1}#request for create {0}, flags {1}".format(new_board, result)), "httpd")
+      return
+    board_name, old_flags = self.origin.sqlite_overchan.execute('SELECT group_name, flags FROM groups WHERE group_id = ?', (board_id,)).fetchone()
+    if int(old_flags) == result:
+      return
+    self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod {0} {1}#Change flags {2}->{1}".format(board_name, result, old_flags)), "httpd")
 
   def get_senderhash(self):
     if 'X-I2P-DestHash' in self.headers:
@@ -321,9 +322,18 @@ class censor(BaseHTTPRequestHandler):
     self.wfile.write(out)
 
   def send_modify_board(self, board_id):
-    row = self.origin.sqlite_overchan.execute("SELECT group_id, group_name, flags FROM groups WHERE group_id = ? OR group_name = ?", (board_id, board_id)).fetchone()
+    new_board = False
+    if board_id.startswith('id='):
+      row = self.origin.sqlite_overchan.execute("SELECT group_id, group_name, flags FROM groups WHERE group_id = ?", (board_id[3:],)).fetchone()
+    elif board_id.startswith('name='):
+      row = self.origin.sqlite_overchan.execute("SELECT group_id, group_name, flags FROM groups WHERE group_name = ?", (board_id[5:],)).fetchone()
+    elif board_id.startswith('new'):
+      row = ('new', 'overchan.<input type="text" name="board_name" value="" class="posttext"/>', '0')
+      new_board = True
+    else:
+      return ''
     if not row:
-      return "Board id %s not found" % board_id
+      return 'Board not found'
 
     flags = self.origin.sqlite_overchan.execute("SELECT flag_name, flag FROM flags").fetchall()
     cur_template = self.origin.template_log_flagnames
@@ -439,7 +449,7 @@ class censor(BaseHTTPRequestHandler):
         cur_template = cur_template.replace("%%delete_link%%", '')
       elif row[2] == 'overchan-board-mod':
         cur_template = cur_template.replace("%%postid%%", data)
-        cur_template = cur_template.replace("%%restore_link%%", '<a href="settings?%s">modify board</a>' % (row[3]))
+        cur_template = cur_template.replace("%%restore_link%%", '<a href="settings?name=%s">modify board</a>' % (row[3]))
         cur_template = cur_template.replace("%%delete_link%%", '')
       elif row[2] != 'delete' and row[2] != 'overchan-delete-attachment':
         cur_template = cur_template.replace("%%postid%%", data)

@@ -485,18 +485,22 @@ class main(threading.Thread):
   def add_article(self, message_id, source="article", timestamp=None):
     self.queue.put((source, message_id, timestamp))
 
-  def overchan_board_add(self, group_name, flags=0):
+  def overchan_board_add(self, args):
+    group_name = args[0]
     if '/' in group_name:
       self.log(self.logger.WARNING, 'got overchan-board-add with invalid group name: \'%s\', ignoring' % group_name)
       return
+    if len(args) > 1:
+      flags = int(args[1])
+    else:
+      flags = 0
     try:
-      if flags == 0:
-        flags = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group_name,)).fetchone()[0])
-        flags = flags ^ (flags & self.cache['flags']['blocked'])
+      flags = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group_name,)).fetchone()[0])
+      flags = flags ^ (flags & self.cache['flags']['blocked'])
       self.sqlite.execute('UPDATE groups SET blocked = 0, flags = ? WHERE group_name = ?', (str(flags), group_name))
       self.log(self.logger.INFO, 'unblocked existing board: \'%s\'' % group_name)
     except:
-      self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update, flags) VALUES (?,?,?,?)', (group_name, 0, int(time.time()),'0'))
+      self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update, flags) VALUES (?,?,?,?)', (group_name, 0, int(time.time()), flags))
       self.log(self.logger.INFO, 'added new board: \'%s\'' % group_name)
     self.sqlite_conn.commit()
     self.regenerate_all_html()
@@ -531,7 +535,7 @@ class main(threading.Thread):
           self.generate_overview()
           self.generate_menu()
       elif line.lower().startswith('overchan-board-add'):
-        self.overchan_board_add(line.lower().split(" ")[1])
+        self.overchan_board_add(line.lower().split(" ")[1:])
       elif line.lower().startswith("overchan-board-del"):
         self.overchan_board_del(line.lower().split(" ")[1])
       elif line.lower().startswith("overchan-delete-attachment "):
@@ -1234,7 +1238,7 @@ class main(threading.Thread):
       generate_archive = False
 
     pages = int(threads / threads_per_page)
-    if threads % threads_per_page != 0:
+    if (threads % threads_per_page != 0) or pages == 0:
       pages += 1
 
     for board in xrange(1, pages + 1):
