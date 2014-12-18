@@ -430,11 +430,12 @@ class main(threading.Thread):
     self.sqlite.execute('''CREATE TABLE IF NOT EXISTS flags
                (flag_id INTEGER PRIMARY KEY AUTOINCREMENT, flag_name text UNIQUE, flag text)''')
 
-    insert_flags = (("blocked",      0b1),        ("hidden",      0b10),
-                    ("no-overview",  0b100),      ("closed",      0b1000),
-                    ("moder-thread", 0b10000),    ("moder-posts", 0b100000),
-                    ("no-sync",      0b1000000),  ("spam-fix",    0b10000000),
-                    ("no-archive",   0b100000000),("sage",        0b1000000000),)
+    insert_flags = (("blocked",      0b1),          ("hidden",      0b10),
+                    ("no-overview",  0b100),        ("closed",      0b1000),
+                    ("moder-thread", 0b10000),      ("moder-posts", 0b100000),
+                    ("no-sync",      0b1000000),    ("spam-fix",    0b10000000),
+                    ("no-archive",   0b100000000),  ("sage",        0b1000000000),
+                    ("news",         0b10000000000),)
     for flag_name, flag in insert_flags:
       try:
         self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', (flag_name, str(flag)))
