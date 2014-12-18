@@ -1603,6 +1603,7 @@ class main(threading.Thread):
       t_engine_mappings_overview['parent'] = 'does_not_exist_yet'
       t_engine_mappings_overview['message'] = 'once upon a time there was a news post'
       t_engine_mappings_overview['allnews_link'] = news_board_link
+      t_engine_mappings_overview['comment_count'] = ''
     else:
       moder_name = ''
       news_board_link = '{0}-1.html'.format(news_board[1].replace('"', '').replace('/', '').split('.', 1)[1])
@@ -1613,6 +1614,7 @@ class main(threading.Thread):
         message = row[1][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % parent
       else:
         message = row[1]
+      message = self.markup_parser(message)
       if row[0] == 'None' or row[0] == '':
         t_engine_mappings_overview['subject'] = 'Breaking news'
       else:
@@ -1629,6 +1631,8 @@ class main(threading.Thread):
       t_engine_mappings_overview['parent'] = parent
       t_engine_mappings_overview['message'] = message
       t_engine_mappings_overview['allnews_link'] = news_board_link
+      t_engine_mappings_overview['comment_count'] = self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE \
+          parent = ? AND parent != article_uid AND group_id = ?', (row[4], news_board[0])).fetchone()[0]
     weekdays = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
     max = 0
     stats = list()
