@@ -1153,8 +1153,10 @@ class main(threading.Thread):
         if (group_flags & self.cache['flags']['spam-fix']) == self.cache['flags']['spam-fix'] and len(message) < 5:
           self.log(self.logger.INFO, 'Spamprotect group %s, censored %s' % (group, message_id))
           return self.move_censored_article(message_id)
+        elif (group_flags & self.cache['flags']['sage']) == self.cache['flags']['sage']:
+          sage = True
     except Exception as e:
-      self.log(self.logger.INFO, 'spamfix group %s error message %s %s' % (group, message_id, e))
+      self.log(self.logger.INFO, 'Processing group %s error message %s %s' % (group, message_id, e))
 
     group_ids = list()
     for group in groups:
@@ -1278,7 +1280,7 @@ class main(threading.Thread):
     if message_id_hash == '':
       return self.t_engine_message_root.substitute(self.get_preparse_post(data, sha1(data[0]).hexdigest(), group_id, 25, 2000, child_view, '', '',  single))
     else:
-      return self.t_engine_message_root.substitute(self.get_preparse_post(data, message_id_hash,            group_id, 25, 2000, child_view, '', '',  single))
+      return self.t_engine_message_root.substitute(self.get_preparse_post(data, message_id_hash,           group_id, 25, 2000, child_view, '', '',  single))
 
   def get_child_post(self, data, message_id_hash, group_id, father, father_pubkey, single):
     if  data[6] != '':
