@@ -434,7 +434,7 @@ class main(threading.Thread):
                     ("no-overview",  0b100),      ("closed",      0b1000),
                     ("moder-thread", 0b10000),    ("moder-posts", 0b100000),
                     ("no-sync",      0b1000000),  ("spam-fix",    0b10000000),
-                    ("no-archive",   0b100000000),)
+                    ("no-archive",   0b100000000),("sage",        0b1000000000),)
     for flag_name, flag in insert_flags:
       try:
         self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', (flag_name, str(flag)))
