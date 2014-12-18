@@ -409,6 +409,7 @@ class main(threading.Thread):
     self.cache = dict()
     self.cache['last_thread'] = dict()
     self.cache['flags'] = dict()
+    self.cache['moder_flags'] = dict()
 
     self.sqlite_dropper_conn = sqlite3.connect('dropper.db3')
     self.dropperdb = self.sqlite_dropper_conn.cursor()
@@ -1153,6 +1154,9 @@ class main(threading.Thread):
         if (group_flags & self.cache['flags']['spam-fix']) == self.cache['flags']['spam-fix'] and len(message) < 5:
           self.log(self.logger.INFO, 'Spamprotect group %s, censored %s' % (group, message_id))
           return self.move_censored_article(message_id)
+        elif (group_flags & self.cache['flags']['news']) == self.cache['flags']['news'] and (not parent or parent == message_id) \
+            and (public_key == '' or not self.check_moder_flags(public_key, 'overchan-news-add')):
+          return self.move_censored_article(message_id)
         elif (group_flags & self.cache['flags']['sage']) == self.cache['flags']['sage']:
           sage = True
     except Exception as e:
@@ -1544,9 +1548,21 @@ class main(threading.Thread):
       return False
     return True
 
+  def check_moder_flags (self, full_pubkey_hex, *args):
+    try:
+      flags = int(self.censordb.execute('SELECT flags from keys WHERE key=?', (full_pubkey_hex,)).fetchone()[0])
+      for flag_name in args:
+        if flags & self.cache['moder_flags'][flag_name] != self.cache['moder_flags'][flag_name]:
+          return False
+    except:
+      return False
+    return True
+
   def cache_init(self):
     for row in self.sqlite.execute('SELECT flag_name, cast(flag as integer) FROM flags WHERE flag_name != ""').fetchall():
       self.cache['flags'][row[0]] = row[1]
+    for row in self.censordb.execute('SELECT command, cast(flag as integer) FROM commands WHERE command != ""').fetchall():
+      self.cache['moder_flags'][row[0]] = row[1]
 
   def generate_board_list(self, group_id='', selflink=False):
     full_board_name_unquoted = full_board_name = board_name_unquoted = board_name = ''
