@@ -116,10 +116,6 @@ class main(threading.Thread):
       try:    self.archive_pages_per_board = int(args['archive_pages_per_board'])
       except: pass
 
-    self.news_uid = '<lwmueokaxt1389929084@web.overchan.sfor.ano>'
-    if 'news_uid' in args:
-      self.news_uid = args['news_uid']
-
     self.sqlite_synchronous = True
     if 'sqlite_synchronous' in args:
       try:   self.sqlite_synchronous = bool(args['sqlite_synchronous'])
@@ -1591,30 +1587,36 @@ class main(threading.Thread):
     self.log(self.logger.INFO, 'generating %s/overview.html' % self.output_directory)
     t_engine_mappings_overview = dict()
     t_engine_mappings_overview['boardlist'] = ''.join(self.generate_board_list())
-    row = self.sqlite.execute('SELECT subject, message, sent, public_key, parent, sender FROM articles WHERE article_uid = ?', (self.news_uid, )).fetchone()
-    if not row:
+    news_board_link = 'overview.html'
+    news_board = self.sqlite.execute('SELECT group_id, group_name FROM groups WHERE \
+        (cast(flags as integer) & ?) == ?', (self.cache['flags']['news'], self.cache['flags']['news'])).fetchone()
+    if news_board:
+      news_board_link = '{0}-1.html'.format(news_board[1].replace('"', '').replace('/', '').split('.', 1)[1])
+      row = self.sqlite.execute('SELECT subject, message, sent, public_key, article_uid, sender FROM articles \
+          WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT 1', (news_board[0], )).fetchone()
+    if not (news_board and row):
       t_engine_mappings_overview['subject'] = ''
       t_engine_mappings_overview['sent'] = ''
       t_engine_mappings_overview['author'] = ''
       t_engine_mappings_overview['pubkey_short'] = ''
       t_engine_mappings_overview['pubkey'] = ''
-      t_engine_mappings_overview['postid'] = ''
       t_engine_mappings_overview['parent'] = 'does_not_exist_yet'
       t_engine_mappings_overview['message'] = 'once upon a time there was a news post'
+      t_engine_mappings_overview['allnews_link'] = news_board_link
     else:
-      postid = sha1(self.news_uid).hexdigest()[:10]
       moder_name = ''
-      if row[4] == '' or row[4] == self.news_uid:
-        parent = postid
-      else:
-        parent = sha1(row[4]).hexdigest()[:10]
+      news_board_link = '{0}-1.html'.format(news_board[1].replace('"', '').replace('/', '').split('.', 1)[1])
+      parent = sha1(row[4]).hexdigest()[:10]
       if len(row[1].split('\n')) > 5:
-        message = '\n'.join(row[1].split('\n')[:5]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
+        message = '\n'.join(row[1].split('\n')[:5]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % parent
       elif len(row[1]) > 1000:
-        message = row[1][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (parent, postid)
+        message = row[1][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % parent
       else:
         message = row[1]
-      t_engine_mappings_overview['subject'] = row[0]
+      if row[0] == 'None' or row[0] == '':
+        t_engine_mappings_overview['subject'] = 'Breaking news'
+      else:
+        t_engine_mappings_overview['subject'] = row[0]
       t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%d.%m.%Y (%a) %H:%M')
       if not row[3] == '':
           t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
@@ -1624,10 +1626,9 @@ class main(threading.Thread):
       if moder_name: t_engine_mappings_overview['author'] = moder_name
       else: t_engine_mappings_overview['author'] = row[5]
       t_engine_mappings_overview['pubkey'] = row[3]
-      t_engine_mappings_overview['postid'] = postid
       t_engine_mappings_overview['parent'] = parent
       t_engine_mappings_overview['message'] = message
-    
+      t_engine_mappings_overview['allnews_link'] = news_board_link
     weekdays = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
     max = 0
     stats = list()
