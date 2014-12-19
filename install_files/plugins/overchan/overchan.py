@@ -764,7 +764,7 @@ class main(threading.Thread):
     self.log(self.logger.INFO, 'bye')
 
   def basicHTMLencode(self, inputString):
-    return inputString.replace('<', '&lt;').replace('>', '&gt;')
+    return inputString.replace('<', '&lt;').replace('>', '&gt;').strip(' \t\n\r')
   
   def generate_pubkey_short_utf_8(self, full_pubkey_hex, length=6):
     pub_short = ''
