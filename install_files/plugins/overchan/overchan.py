@@ -4,11 +4,11 @@ import time
 from datetime import datetime, timedelta
 from email.utils import parsedate_tz
 from calendar import timegm
-import random
+#import random
 import string
 import os
 import threading
-import urllib
+#import urllib
 from hashlib import sha1, sha512
 from email.feedparser import FeedParser
 import Image
@@ -48,6 +48,7 @@ class main(threading.Thread):
     # TODO: move sleep stuff to config table
     self.sleep_threshold = 10
     self.sleep_time = 0.02
+
     self.last_thread = dict()
 
     error = ''
@@ -335,7 +336,7 @@ class main(threading.Thread):
       del something
       os.remove(out)
     except IOError as e:
-      self.die('error: can\'t load PIL library')
+      self.die('error: can\'t load PIL library, err %s', e)
       return False
     self.queue = Queue.Queue()
     return True
@@ -716,7 +717,7 @@ class main(threading.Thread):
               f.close()
               #self.log(self.logger.WARNING, 'got article %s, parse_message failed. somehow.' % message_id)
           except Exception as e:
-            self.log(self.logger.WARNING, 'something went wrong while trying to parse article %s:' % message_id)
+            self.log(self.logger.WARNING, 'something went wrong while trying to parse article %s: %s' % (message_id, e))
             self.log(self.logger.WARNING, traceback.format_exc())
             try:
               f.close()
@@ -730,7 +731,7 @@ class main(threading.Thread):
 
         if self.queue.qsize() > self.sleep_threshold:
           time.sleep(self.sleep_time)
-      except Queue.Empty as e:
+      except Queue.Empty:
         if len(self.regenerate_boards) > 0:
           do_sleep = len(self.regenerate_boards) > self.sleep_threshold
           if do_sleep:
