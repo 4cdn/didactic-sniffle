@@ -33,7 +33,7 @@
       .filedescription {
         font-style: italic;
       }
-      .messageroot {
+      .messageroot .highlightroot{
         margin-bottom: 1px;
         border: none;
         background:  #101010;
@@ -47,7 +47,7 @@
         border-radius: 0px;
         padding: 5px;
       }
-      .highlight {
+      .highlight .highlightroot {
         background: #EEDACB;
         padding: 10px;
         color: #333333;
