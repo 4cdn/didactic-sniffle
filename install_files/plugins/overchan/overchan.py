@@ -832,7 +832,7 @@ class main(threading.Thread):
     return '<div class="code">%s</div>' % text
 
   def spoilit(self, rematch):
-    return '<span class="spoiler" onmouseover="this.style.color=\'white\';" onmouseout="this.style.color=\'black\'">%s</span>' % rematch.group(1)
+    return '<span class="spoiler">%s</span>' % rematch.group(1)
 
   def boldit(self, rematch):
     return '<b>%s</b>' % rematch.group(1)
@@ -1308,11 +1308,11 @@ class main(threading.Thread):
         pagelist = list()
         for page in xrange(1, pages + 1):
           if page != page_counter:
-            pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
+            pagelist.append('<a href="{0}-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
           else:
-            pagelist.append('[{0}]&nbsp;'.format(page))
+            pagelist.append('[{0}] '.format(page))
         if generate_archive == True:
-          pagelist.append('<a href="{0}-archive-1.html">[Archive]</a>&nbsp;'.format(board_name_unquoted))
+          pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
         t_engine_mapper_board['pagelist'] = ''.join(pagelist)
         t_engine_mapper_board['boardlist'] = boardlist
         t_engine_mapper_board['full_board'] = full_board_name_unquoted
@@ -1452,11 +1452,11 @@ class main(threading.Thread):
       pagelist = list()
       for page in xrange(1, pages + 1):
         if page != page_counter:
-          pagelist.append('<a href="{0}-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
+          pagelist.append('<a href="{0}-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
         else:
-          pagelist.append('[{0}]&nbsp;'.format(page))
+          pagelist.append('[{0}] '.format(page))
       if generate_archive == True:
-        pagelist.append('<a href="{0}-archive-1.html">[Archive]</a>&nbsp;'.format(board_name_unquoted))
+        pagelist.append('<a href="{0}-archive-1.html">[Archive]</a> '.format(board_name_unquoted))
       t_engine_mapper_board['pagelist'] = ''.join(pagelist)
       t_engine_mapper_board['boardlist'] = boardlist
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
@@ -1516,9 +1516,9 @@ class main(threading.Thread):
         pagelist = list()
         for page in xrange(1, pages + 1):
           if page != page_counter:
-            pagelist.append('<a href="{0}-archive-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
+            pagelist.append('<a href="{0}-archive-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
           else:
-            pagelist.append('[{0}]&nbsp;'.format(page))
+            pagelist.append('[{0}] '.format(page))
         t_engine_mapper_board['pagelist'] = ''.join(pagelist)
         t_engine_mapper_board['boardlist'] = boardlist
         t_engine_mapper_board['full_board'] = full_board_name_unquoted
@@ -1599,9 +1599,9 @@ class main(threading.Thread):
       pagelist = list()
       for page in xrange(1, pages + 1):
         if page != page_counter:
-          pagelist.append('<a href="{0}-archive-{1}.html">[{1}]</a>&nbsp;'.format(board_name_unquoted, page))
+          pagelist.append('<a href="{0}-archive-{1}.html">[{1}]</a> '.format(board_name_unquoted, page))
         else:
-          pagelist.append('[{0}]&nbsp;'.format(page))
+          pagelist.append('[{0}] '.format(page))
       t_engine_mapper_board['pagelist'] = ''.join(pagelist)
       t_engine_mapper_board['boardlist'] = boardlist
       t_engine_mapper_board['full_board'] = full_board_name_unquoted
@@ -1932,7 +1932,7 @@ class main(threading.Thread):
     for group_row in self.sqlite.execute('SELECT group_name, group_id FROM groups WHERE blocked = 0 ORDER by group_name ASC').fetchall():
       current_group_name = group_row[0].split('.', 1)[1].replace('"', '').replace('/', '')
       current_group_name_encoded = self.basicHTMLencode(current_group_name)
-      boardlist.append('&nbsp;<a href="%s-1.html">%s</a>&nbsp;|' % (current_group_name, current_group_name_encoded))
+      boardlist.append(' <a href="%s-1.html">%s</a> |' % (current_group_name, current_group_name_encoded))
       if group_row[1] == root_row[8]:
         full_group_name_unquoted = group_row[0].replace('"', '').replace('/', '')
         full_group_name = self.basicHTMLencode(full_group_name_unquoted)
