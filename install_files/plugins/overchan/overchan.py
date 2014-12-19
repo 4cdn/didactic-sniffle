@@ -449,6 +449,8 @@ class main(threading.Thread):
     self.missing_parents = dict()
     self.sqlite_dropper_conn = sqlite3.connect('dropper.db3')
     self.dropperdb = self.sqlite_dropper_conn.cursor()
+    self.sqlite_censor_conn = sqlite3.connect('censor.db3')
+    self.censordb = self.sqlite_censor_conn.cursor()
     self.sqlite_hasher_conn = sqlite3.connect('hashes.db3')
     self.db_hasher = self.sqlite_hasher_conn.cursor() 
     self.sqlite_conn = sqlite3.connect(os.path.join(self.database_directory, 'overchan.db3'))
@@ -762,6 +764,7 @@ class main(threading.Thread):
           self.sqlite.execute('VACUUM;')
           self.sqlite_conn.commit()
           got_control = False
+    self.sqlite_censor_conn.close()
     self.sqlite_conn.close()
     self.sqlite_hasher_conn.close()
     self.sqlite_dropper_conn.close()
@@ -778,6 +781,19 @@ class main(threading.Thread):
     for x in range(0, length):
       pub_short += '&#%i;' % (9600 + int(full_pubkey_hex[-(length*2):][x*2:x*2+2], 16))
     return pub_short
+
+  def pubkey_to_name (self, full_pubkey_hex, root_full_pubkey_hex='', sender='', root_sender=''):
+    op_flag = nickname = ''
+    try:
+      local_name = self.censordb.execute('SELECT local_name from keys WHERE key=? and local_name != ""', (full_pubkey_hex,)).fetchone()
+    except:
+      local_name=''
+    if full_pubkey_hex == root_full_pubkey_hex:
+      op_flag = '<span class="op-kyn">OP</span> '
+      nickname = sender
+    if local_name:
+      nickname = '<span class="zoi">%s</span>' % (local_name)
+    return '%s%s' % (op_flag, nickname)
 
   def upp_it(self, data):
     if data[-1] not in self.upper_table:
@@ -1283,6 +1299,7 @@ class main(threading.Thread):
     for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ?', (group_id, threads_per_page * pages_per_board)).fetchall():
       t_engine_mapper_root = dict() 
       root_message_id_hash = sha1(root_row[0]).hexdigest()
+      moder_name = ''
       isvid = False
       if thread_counter == threads_per_page:
         self.log(self.logger.INFO, 'generating %s/%s-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
@@ -1325,14 +1342,12 @@ class main(threading.Thread):
         root_imagelink = self.no_file
         root_thumblink = self.no_file
       if root_row[8]:
-        if root_row[8] != '':
-          t_engine_mapper_root['signed'] = self.t_engine_signed.substitute(
-            articlehash=root_message_id_hash[:10],
-            pubkey=root_row[8],
-            pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
-          ) 
-        else:
-          t_engine_mapper_root['signed'] = ''
+        t_engine_mapper_root['signed'] = self.t_engine_signed.substitute(
+          articlehash=root_message_id_hash[:10],
+          pubkey=root_row[8],
+          pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
+        )
+        moder_name = self.pubkey_to_name(root_row[8])
       else:
         t_engine_mapper_root['signed'] = ''
       if len(root_row[4].split('\n')) > 20:
@@ -1355,7 +1370,8 @@ class main(threading.Thread):
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
       t_engine_mapper_root['articlehash_full'] = root_message_id_hash
-      t_engine_mapper_root['author'] = root_row[1]
+      if moder_name: t_engine_mapper_root['author'] = moder_name
+      else: t_engine_mapper_root['author'] = root_row[1]
       t_engine_mapper_root['subject'] = root_row[2]
       t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
       t_engine_mapper_root['imagelink'] = root_imagelink
@@ -1368,6 +1384,7 @@ class main(threading.Thread):
       for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
         t_engine_mapper_child = dict()
         article_hash = sha1(child_row[0]).hexdigest()
+        moder_name = ''
         isvid = False
         if child_row[6] != '':
           if child_row[7] == 'invalid':
@@ -1385,14 +1402,12 @@ class main(threading.Thread):
           t_engine_mapper_child['thumblink'] = child_thumblink
           t_engine_mapper_child['imagename'] = child_row[5]
         if child_row[8]:
-          if child_row[8] != '':
-            t_engine_mapper_child['signed'] = self.t_engine_signed.substitute(
-              articlehash=article_hash[:10],
-              pubkey=child_row[8],
-              pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
-            )
-          else:
-            t_engine_mapper_child['signed'] = ''
+          t_engine_mapper_child['signed'] = self.t_engine_signed.substitute(
+            articlehash=article_hash[:10],
+            pubkey=child_row[8],
+            pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
+          )
+          moder_name = self.pubkey_to_name(child_row[8], root_row[8], child_row[1], root_row[1])
         else:
           t_engine_mapper_child['signed'] = ''
         
@@ -1409,11 +1424,15 @@ class main(threading.Thread):
         t_engine_mapper_child['parenthash_full'] = root_message_id_hash
         t_engine_mapper_child['articlehash'] = article_hash[:10]
         t_engine_mapper_child['articlehash_full'] = article_hash
-        t_engine_mapper_child['author'] = child_row[1]
-        t_engine_mapper_child['subject'] = child_row[2]
+        if moder_name: t_engine_mapper_child['author'] = moder_name
+        else: t_engine_mapper_child['author'] = child_row[1]
         t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
         t_engine_mapper_child['message'] = message
         t_engine_mapper_child['frontend'] = self.frontend(child_row[0])
+        if child_row[2] != 'None':
+          t_engine_mapper_child['subject'] = child_row[2]
+        else:
+          t_engine_mapper_child['subject'] = ''
         if child_row[6] != '':
           childs.append(self.t_engine_message_pic.substitute(t_engine_mapper_child))
         else:
@@ -1488,6 +1507,7 @@ class main(threading.Thread):
     for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) ORDER BY last_update DESC LIMIT ? OFFSET ?', (group_id, threads_per_page * pages_per_board, offset)).fetchall():
       t_engine_mapper_root = dict()
       root_message_id_hash = sha1(root_row[0]).hexdigest()
+      moder_name = ''
       isvid = False
       if thread_counter == threads_per_page:
         self.log(self.logger.INFO, 'generating %s/%s-archive-%s.html' % (self.output_directory, board_name_unquoted, page_counter))
@@ -1534,6 +1554,7 @@ class main(threading.Thread):
             pubkey=root_row[8],
             pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
           )
+          moder_name = self.pubkey_to_name(root_row[8])
         else:
           t_engine_mapper_root['signed'] = ''
       else:
@@ -1558,7 +1579,8 @@ class main(threading.Thread):
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
       t_engine_mapper_root['articlehash_full'] = root_message_id_hash
-      t_engine_mapper_root['author'] = root_row[1]
+      if moder_name: t_engine_mapper_root['author'] = moder_name
+      else: t_engine_mapper_root['author'] = root_row[1]
       t_engine_mapper_root['subject'] = root_row[2]
       t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
       t_engine_mapper_root['imagelink'] = root_imagelink
@@ -1614,6 +1636,7 @@ class main(threading.Thread):
     for root_row in self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE group_id = ? AND (parent = "" OR parent = article_uid) AND last_update > ? ORDER BY last_update DESC', (group_id, timestamp)).fetchall():
       t_engine_mapper_root = dict()
       root_message_id_hash = sha1(root_row[0]).hexdigest()
+      moder_name = ''
       isvid = False
       if root_row[6] != '':
         root_imagelink = root_row[6]
@@ -1638,6 +1661,7 @@ class main(threading.Thread):
             pubkey=root_row[8],
             pubkey_short=self.generate_pubkey_short_utf_8(root_row[8])
           )
+          moder_name = self.pubkey_to_name(root_row[8])
         else:
           t_engine_mapper_root['signed'] = ''
       else:
@@ -1662,7 +1686,8 @@ class main(threading.Thread):
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
       t_engine_mapper_root['articlehash_full'] = root_message_id_hash
-      t_engine_mapper_root['author'] = root_row[1]
+      if moder_name: t_engine_mapper_root['author'] = moder_name
+      else: t_engine_mapper_root['author'] = root_row[1]
       t_engine_mapper_root['subject'] = root_row[2]
       t_engine_mapper_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
       t_engine_mapper_root['imagelink'] = root_imagelink
@@ -1675,6 +1700,7 @@ class main(threading.Thread):
       for child_row in self.sqlite.execute('SELECT * FROM (SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ? ORDER BY sent DESC LIMIT 4) ORDER BY sent ASC', (root_row[0], group_id)).fetchall():
         t_engine_mapper_child = dict()
         article_hash = sha1(child_row[0]).hexdigest()
+        moder_name = ''
         isvid = False
         if child_row[6] != '':
           if child_row[7] == 'invalid':
@@ -1698,6 +1724,7 @@ class main(threading.Thread):
               pubkey=child_row[8],
               pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
             )
+            moder_name = self.pubkey_to_name(child_row[8], root_row[8], child_row[1], root_row[1])
           else:
             t_engine_mapper_child['signed'] = ''
         else:
@@ -1716,11 +1743,16 @@ class main(threading.Thread):
         t_engine_mapper_child['parenthash_full'] = root_message_id_hash
         t_engine_mapper_child['articlehash'] = article_hash[:10]
         t_engine_mapper_child['articlehash_full'] = article_hash
-        t_engine_mapper_child['author'] = child_row[1]
-        t_engine_mapper_child['subject'] = child_row[2]
+        if moder_name: t_engine_mapper_child['author'] = moder_name
+        else: t_engine_mapper_child['author'] = child_row[1]
+        #t_engine_mapper_child['subject'] = child_row[2]
         t_engine_mapper_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
         t_engine_mapper_child['message'] = message
         t_engine_mapper_child['frontend'] = self.frontend(child_row[0])
+        if child_row[2] != 'None':
+          t_engine_mapper_child['subject'] = child_row[2]
+        else:
+          t_engine_mapper_child['subject'] = ''
         if child_row[6] != '':
           childs.append(self.t_engine_message_pic.substitute(t_engine_mapper_child))
         else:
@@ -1775,7 +1807,7 @@ class main(threading.Thread):
     t_engine_mappings_root = dict()
     root_message_id_hash = sha1(root_uid).hexdigest() #self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
     # FIXME: benchmark sha1() vs hasher_db_query
-            
+    moder_name = ''
     root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, group_id, public_key FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()    
     if not root_row:
       # FIXME: create temporary root post here? this will never get called on startup because it checks for root posts only
@@ -1820,6 +1852,7 @@ class main(threading.Thread):
           pubkey=root_row[9],
           pubkey_short=self.generate_pubkey_short_utf_8(root_row[9])
         )
+        moder_name = self.pubkey_to_name(root_row[9])
       else:
         t_engine_mappings_root['signed'] = ''
     else:
@@ -1829,7 +1862,8 @@ class main(threading.Thread):
     #  message = ('<video src="/img/%s" controls=controls type="video/webm">no html5 video</video><br />' % root_row[6]) + message
     t_engine_mappings_root['articlehash'] = root_message_id_hash[:10]
     t_engine_mappings_root['articlehash_full'] = root_message_id_hash
-    t_engine_mappings_root['author'] = root_row[1]
+    if moder_name: t_engine_mappings_root['author'] = moder_name
+    else: t_engine_mappings_root['author'] = root_row[1]
     t_engine_mappings_root['subject'] = root_row[2]
     t_engine_mappings_root['sent'] = datetime.utcfromtimestamp(root_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
     t_engine_mappings_root['imagelink'] = root_imagelink
@@ -1844,6 +1878,7 @@ class main(threading.Thread):
       t_engine_mappings_child = dict()
       isvid = False
       article_hash = sha1(child_row[0]).hexdigest()
+      moder_name = ''
       if child_row[6] != '':
         if child_row[7] == 'invalid':
           child_thumblink = self.invalid_file
@@ -1861,28 +1896,30 @@ class main(threading.Thread):
         t_engine_mappings_child['thumblink'] = child_thumblink
         t_engine_mappings_child['imagename'] = child_row[5]
       if child_row[8]:
-        if child_row[8] != '':
-          t_engine_mappings_child['signed'] = self.t_engine_signed.substitute(
-            articlehash=article_hash[:10],
-            pubkey=child_row[8],
-            pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
-          )
-        else:
-          t_engine_mappings_child['signed'] = ''
+        t_engine_mappings_child['signed'] = self.t_engine_signed.substitute(
+          articlehash=article_hash[:10],
+          pubkey=child_row[8],
+          pubkey_short=self.generate_pubkey_short_utf_8(child_row[8])
+        )
+        moder_name = self.pubkey_to_name(child_row[8], root_row[9], child_row[1], root_row[1])
       else:
         t_engine_mappings_child['signed'] = ''
       t_engine_mappings_child['parenthash'] = root_message_id_hash[:10]
       t_engine_mappings_child['parenthash_full'] = root_message_id_hash
       t_engine_mappings_child['articlehash'] = article_hash[:10]
       t_engine_mappings_child['articlehash_full'] = article_hash
-      t_engine_mappings_child['author'] = child_row[1]
-      t_engine_mappings_child['subject'] = child_row[2]
+      if moder_name: t_engine_mappings_child['author'] = moder_name
+      else: t_engine_mappings_child['author'] = child_row[1]
       t_engine_mappings_child['sent'] = datetime.utcfromtimestamp(child_row[3]).strftime('%d.%m.%Y (%a) %H:%M')
       message = self.markup_parser(child_row[4])
       #if isvid:
       #  message = ('<video controls=controls src="/img/%s" type="video/webm">no html5 video</video><br />' % root_row[6]) + message
       t_engine_mappings_child['message'] = message
       t_engine_mappings_child['frontend'] = self.frontend(child_row[0])
+      if child_row[2] != 'None':
+        t_engine_mappings_child['subject'] = child_row[2]
+      else:
+        t_engine_mappings_child['subject'] = ''
       if child_row[6] != '':
         childs.append(self.t_engine_message_pic.substitute(t_engine_mappings_child))
       else:
@@ -1963,6 +2000,7 @@ class main(threading.Thread):
       t_engine_mappings_overview['message'] = 'once upon a time there was a news post'
     else:
       postid = sha1(self.news_uid).hexdigest()[:10]
+      moder_name = ''
       if row[4] == '' or row[4] == self.news_uid:
         parent = postid
       else:
@@ -1975,11 +2013,13 @@ class main(threading.Thread):
         message = row[1]
       t_engine_mappings_overview['subject'] = row[0]
       t_engine_mappings_overview['sent'] = datetime.utcfromtimestamp(row[2]).strftime('%d.%m.%Y (%a) %H:%M')
-      t_engine_mappings_overview['author'] = row[5]
       if not row[3] == '':
           t_engine_mappings_overview['pubkey_short'] = self.generate_pubkey_short_utf_8(row[3])
+          moder_name = self.pubkey_to_name(row[3])
       else:
           t_engine_mappings_overview['pubkey_short'] = ''
+      if moder_name: t_engine_mappings_overview['author'] = moder_name
+      else: t_engine_mappings_overview['author'] = row[5]
       t_engine_mappings_overview['pubkey'] = row[3]
       t_engine_mappings_overview['postid'] = postid
       t_engine_mappings_overview['parent'] = parent
