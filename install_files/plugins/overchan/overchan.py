@@ -447,6 +447,8 @@ class main(threading.Thread):
     self.regenerate_boards = list()
     self.regenerate_threads = list()
     self.missing_parents = dict()
+    self.sqlite_dropper_conn = sqlite3.connect('dropper.db3')
+    self.dropperdb = self.sqlite_dropper_conn.cursor()
     self.sqlite_hasher_conn = sqlite3.connect('hashes.db3')
     self.db_hasher = self.sqlite_hasher_conn.cursor() 
     self.sqlite_conn = sqlite3.connect(os.path.join(self.database_directory, 'overchan.db3'))
@@ -762,6 +764,7 @@ class main(threading.Thread):
           got_control = False
     self.sqlite_conn.close()
     self.sqlite_hasher_conn.close()
+    self.sqlite_dropper_conn.close()
     self.log(self.logger.INFO, 'bye')
 
   def basicHTMLencode(self, inputString):
@@ -866,6 +869,29 @@ class main(threading.Thread):
 
     return message
 
+  def move_invalid_article(self, message_id):
+    groups = list()
+    group_rows = list()
+    for row in self.dropperdb.execute('SELECT group_name, article_id from articles, groups WHERE message_id=? and groups.group_id = articles.group_id', (message_id,)).fetchall():
+      group_rows.append((row[0], row[1]))
+      groups.append(row[0])
+    if os.path.exists(os.path.join('articles', 'invalid', message_id)):
+      self.log(self.logger.DEBUG, "already move, still handing over to redistribute further")
+    elif os.path.exists(os.path.join("articles", message_id)):
+      self.log(self.logger.DEBUG, "moving %s to articles/invalid/" % message_id)
+      os.rename(os.path.join("articles", message_id), os.path.join("articles", "invalid", message_id))
+      self.log(self.logger.DEBUG, "deleting groups/%s/%i" % (row[0], row[1]))
+      for group in group_rows:
+        try:
+          # FIXME race condition with dropper if currently processing this very article
+          os.unlink(os.path.join("groups", str(group[0]), str(group[1])))
+        except Exception as e:
+          self.log(self.logger.WARNING, "could not delete %s: %s" % (os.path.join("groups", str(group[0]), str(group[1])), e))
+    elif not os.path.exists(os.path.join('articles', 'invalid', message_id)):
+      f = open(os.path.join('articles', 'invalid', message_id), 'w')
+      f.close()
+    return True
+
   def parse_message(self, message_id, fd):
     self.log(self.logger.INFO, 'new message: %s' % message_id)
     hash_message_uid = sha1(message_id).hexdigest()
@@ -939,62 +965,6 @@ class main(threading.Thread):
         self.log(self.logger.DEBUG, 'got public_key with length %i and content \'%s\'' % (len(public_key), public_key))
         if not (len(signature) == 128 and len(public_key) == 64):
           public_key = ''
-    group_ids = list()
-    for group in groups:
-      result = self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=? AND blocked = 0', (group,)).fetchone()
-      if not result:
-        try:
-          self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
-          self.sqlite_conn.commit()
-        except:
-          self.log(self.logger.INFO, 'ignoring message for blocked group %s' % group)
-          continue
-        self.regenerate_all_html()
-        group_ids.append(int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=?', (group,)).fetchone()[0]))
-      else:
-        group_ids.append(int(result[0]))
-    if len(group_ids) == 0:
-      self.log(self.logger.DEBUG, 'no groups left which are not blocked. ignoring %s' % message_id)
-      return False
-    for group_id in group_ids:
-      if group_id not in self.regenerate_boards:
-        self.regenerate_boards.append(group_id)
-
-    if parent != '' and parent != message_id:
-      last_update = sent
-      if parent not in self.regenerate_threads:
-        self.regenerate_threads.append(parent)
-      if not sage:
-        result = self.sqlite.execute('SELECT last_update FROM articles WHERE article_uid = ?', (parent,)).fetchone()
-        if result:
-          parent_last_update = result[0]
-          if sent > parent_last_update:
-            self.sqlite.execute('UPDATE articles SET last_update=? WHERE article_uid=?', (sent, parent))
-            self.sqlite_conn.commit()
-        else:
-          self.log(self.logger.INFO, 'missing parent %s for post %s' %  (parent, message_id))
-          if parent in self.missing_parents:
-            if sent > self.missing_parents[parent]:
-              self.missing_parents[parent] = sent
-          else:
-            self.missing_parents[parent] = sent
-    else:
-      # root post
-      if not message_id in self.missing_parents:
-        last_update = sent
-      else:
-        if self.missing_parents[message_id] > sent:
-          # obviously the case. still we check for invalid dates here
-          last_update = self.missing_parents[message_id]
-        else:
-          last_update = sent
-        del self.missing_parents[message_id]
-        self.log(self.logger.INFO, 'found a missing parent: %s' % message_id)
-        if len(self.missing_parents) > 0:
-          self.log(self.logger.INFO, 'still missing %i parents' % len(self.missing_parents))
-      if message_id not in self.regenerate_threads:
-        self.regenerate_threads.append(message_id)
-
     #parser = FeedParser()
     if public_key != '':
       bodyoffset = fd.tell()
@@ -1192,6 +1162,76 @@ class main(threading.Thread):
         message += '-----' + result.get_content_type() + '-----\n\n'
     del result
     message = self.basicHTMLencode(message)
+
+    if (not subject or subject == 'None') and (message == image_name == public_key == '') and (parent and parent != message_id) and (not sender or sender == 'Anonymous'):
+      self.log(self.logger.INFO, 'ignoring empty child message  %s' % message_id)
+      return self.move_invalid_article(message_id)
+    try:
+      for group in groups:
+        group_flags = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group,)).fetchone()[0])
+        spam_flag  = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="spam-fix"').fetchone()[0])
+        if ((group_flags & spam_flag) == spam_flag) and len(message) < 5:
+          self.log(self.logger.INFO, 'Spamprotect group %s, delete %s' % (group, message_id))
+          return self.move_invalid_article(message_id)
+    except Exception as e:
+      self.log(self.logger.INFO, 'spamfix group %s error message %s %s' % (group, message_id, e))
+
+    group_ids = list()
+    for group in groups:
+      result = self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=? AND blocked = 0', (group,)).fetchone()
+      if not result:
+        try:
+          self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group, 1, int(time.time())))
+          self.sqlite_conn.commit()
+        except:
+          self.log(self.logger.INFO, 'ignoring message for blocked group %s' % group)
+          continue
+        self.regenerate_all_html()
+        group_ids.append(int(self.sqlite.execute('SELECT group_id FROM groups WHERE group_name=?', (group,)).fetchone()[0]))
+      else:
+        group_ids.append(int(result[0]))
+    if len(group_ids) == 0:
+      self.log(self.logger.DEBUG, 'no groups left which are not blocked. ignoring %s' % message_id)
+      return False
+    for group_id in group_ids:
+      if group_id not in self.regenerate_boards:
+        self.regenerate_boards.append(group_id)
+
+    if parent != '' and parent != message_id:
+      last_update = sent
+      if parent not in self.regenerate_threads:
+        self.regenerate_threads.append(parent)
+      if not sage:
+        result = self.sqlite.execute('SELECT last_update FROM articles WHERE article_uid = ?', (parent,)).fetchone()
+        if result:
+          parent_last_update = result[0]
+          if sent > parent_last_update:
+            self.sqlite.execute('UPDATE articles SET last_update=? WHERE article_uid=?', (sent, parent))
+            self.sqlite_conn.commit()
+        else:
+          self.log(self.logger.INFO, 'missing parent %s for post %s' %  (parent, message_id))
+          if parent in self.missing_parents:
+            if sent > self.missing_parents[parent]:
+              self.missing_parents[parent] = sent
+          else:
+            self.missing_parents[parent] = sent
+    else:
+      # root post
+      if not message_id in self.missing_parents:
+        last_update = sent
+      else:
+        if self.missing_parents[message_id] > sent:
+          # obviously the case. still we check for invalid dates here
+          last_update = self.missing_parents[message_id]
+        else:
+          last_update = sent
+        del self.missing_parents[message_id]
+        self.log(self.logger.INFO, 'found a missing parent: %s' % message_id)
+        if len(self.missing_parents) > 0:
+          self.log(self.logger.INFO, 'still missing %i parents' % len(self.missing_parents))
+      if message_id not in self.regenerate_threads:
+        self.regenerate_threads.append(message_id)
+
     if self.sqlite.execute('SELECT article_uid FROM articles WHERE article_uid=?', (message_id,)).fetchone():
       # post has been censored and is now being restored. just delete post for all groups so it can be reinserted
       self.log(self.logger.INFO, 'post has been censored and is now being restored: %s' % message_id) 
