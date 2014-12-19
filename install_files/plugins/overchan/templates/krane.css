@@ -279,3 +279,17 @@
       .op-kyn {
         color: skyblue;
       }
+      .menu-footer {
+        font-size: 0.7em;
+        text-align: center;
+        margin: 0.3em;
+        bottom: 5em;
+        position: fixed
+      }
+      .published {
+        font-size: 0.85em;
+        color: #898E93;
+      }
+      .menu-left {
+        font-size: 0.9em;
+      }
