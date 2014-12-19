@@ -1352,8 +1352,8 @@ class main(threading.Thread):
         t_engine_mapper_root['signed'] = ''
       if len(root_row[4].split('\n')) > 20:
         message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
-      elif len(root_row[4]) > 1000:
-        message = root_row[4][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      elif len(root_row[4]) > 2000:
+        message = root_row[4][:2000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
       else:
         message = root_row[4]
       message = self.markup_parser(message)
@@ -1365,7 +1365,7 @@ class main(threading.Thread):
       if missing > 0:
         if missing == 1: post = "post"
         else: post = "posts"
-        message += '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
+        message += '\n\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
       t_engine_mapper_root['frontend'] = self.frontend(root_row[0])
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
@@ -1413,8 +1413,8 @@ class main(threading.Thread):
         
         if len(child_row[4].split('\n')) > 20:
           message = '\n'.join(child_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
-        elif len(child_row[4]) > 1000:
-          message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
+        elif len(child_row[4]) > 1500:
+          message = child_row[4][:1500] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
         else:
           message = child_row[4]
         message = self.markup_parser(message)
@@ -1468,6 +1468,7 @@ class main(threading.Thread):
       del pagelist
       del boardlist
       del threads
+    #Fix archive generation
     if generate_archive and (not self.last_thread.has_key(group_id) or self.last_thread[group_id] != root_message_id_hash):
       self.last_thread[group_id] = root_message_id_hash
       self.generate_archive(group_id)
@@ -1561,8 +1562,8 @@ class main(threading.Thread):
         t_engine_mapper_root['signed'] = ''
       if len(root_row[4].split('\n')) > 20:
         message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
-      elif len(root_row[4]) > 1000:
-        message = root_row[4][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      elif len(root_row[4]) > 2000:
+        message = root_row[4][:2000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
       else:
         message = root_row[4]
       message = self.markup_parser(message)
@@ -1574,7 +1575,7 @@ class main(threading.Thread):
       if missing > 0:
         if missing == 1: post = "post"
         else: post = "posts"
-        message += '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
+        message += '\n\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
       t_engine_mapper_root['frontend'] = self.frontend(root_row[0])
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
@@ -1668,8 +1669,8 @@ class main(threading.Thread):
         t_engine_mapper_root['signed'] = ''
       if len(root_row[4].split('\n')) > 20:
         message = '\n'.join(root_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
-      elif len(root_row[4]) > 1000:
-        message = root_row[4][:1000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
+      elif len(root_row[4]) > 2000:
+        message = root_row[4][:2000] + '\n[..] <a href="thread-%s.html"><i>message too large</i></a>\n' % root_message_id_hash[:10]
       else:
         message = root_row[4]
       message = self.markup_parser(message)
@@ -1681,7 +1682,7 @@ class main(threading.Thread):
       if missing > 0:
         if missing == 1: post = "post"
         else: post = "posts"
-        message += '\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
+        message += '\n\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(root_message_id_hash[:10], missing, post)
       t_engine_mapper_root['frontend'] = self.frontend(root_row[0])
       t_engine_mapper_root['message'] = message
       t_engine_mapper_root['articlehash'] = root_message_id_hash[:10]
@@ -1732,8 +1733,8 @@ class main(threading.Thread):
 
         if len(child_row[4].split('\n')) > 20:
           message = '\n'.join(child_row[4].split('\n')[:20]) + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
-        elif len(child_row[4]) > 1000:
-          message = child_row[4][:1000] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
+        elif len(child_row[4]) > 1500:
+          message = child_row[4][:1500] + '\n[..] <a href="thread-%s.html#%s"><i>message too large</i></a>\n' % (root_message_id_hash[:10], article_hash[:10])
         else:
           message = child_row[4]
         message = self.markup_parser(message)
@@ -2061,7 +2062,7 @@ class main(threading.Thread):
       else:
         parent = sha1(row[5]).hexdigest()[:10]
         try:
-          subject = self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (row[5],)).fetchone()[0] 
+          subject = self.sqlite.execute('SELECT subject FROM articles WHERE article_uid = ?', (row[5],)).fetchone()[0][:60]
         except:
           subject = 'root post not yet available'
       # show first message words as subject in case it is None
@@ -2072,9 +2073,11 @@ class main(threading.Thread):
         else:
           subject = self.sqlite.execute('SELECT message FROM articles WHERE article_uid = ?', (row[5],)).fetchone()[0][:60]
       if len(subject) > 60:
-        subject = subject[:60] + ' [..]'
-      if len(author) > 20:
-        author = author[:20] + ' [..]'
+        subject = subject[:60]
+      if len(author) > 12:
+        author = author[:12]
+      if subject == '':
+        subject = 'None'
       stats.append(self.template_latest_posts_row.replace('%%sent%%', sent).replace('%%board%%', board).replace('%%parent%%', parent).replace('%%articlehash%%', articlehash).replace('%%author%%', author).replace('%%subject%%', subject))
     #for row in self.sqlite.execute('SELECT articles.last_update, group_name, sender, subject, article_uid FROM articles, groups WHERE (parent = "" or parent = article_uid) AND articles.group_id = groups.group_id ORDER BY articles.last_update DESC LIMIT ' + str(postcount)).fetchall():
     #  last_update = datetime.utcfromtimestamp(row[0]).strftime('%d.%m.%Y (%a) %H:%M UTC')
