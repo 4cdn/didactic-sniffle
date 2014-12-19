@@ -60,8 +60,8 @@ class main(threading.Thread):
     self.log(self.logger.DEBUG, 'initializing censor_httpd..')
     args['censor'] = self
     self.httpd = censor_httpd.censor_httpd("censor_httpd", self.logger, args)
-    self.db_version = 3
-    self.all_flags = "511"
+    self.db_version = 4
+    self.all_flags = "1023"
     self.queue = Queue.Queue()
     self.command_mapper = dict()
     self.command_mapper['delete'] = self.handle_delete
@@ -70,6 +70,7 @@ class main(threading.Thread):
     self.command_mapper['srnd-acl-mod'] = self.handle_srnd_acl_mod
     self.command_mapper['overchan-board-add'] = self.handle_board_add
     self.command_mapper['overchan-board-del'] = self.handle_board_del
+    self.command_mapper['overchan-board-mod'] = self.handle_overchan_board_mod
 
   def shutdown(self):
     self.httpd.shutdown()
@@ -135,6 +136,12 @@ class main(threading.Thread):
       self.log(self.logger.INFO, "updating db from version %i to version %i" % (current_version, 3))
       self.censordb.execute("CREATE UNIQUE INDEX IF NOT EXISTS sig_cache_message_uid_idx ON signature_cache(message_uid);")
       self.censordb.execute('UPDATE config SET value = "3" WHERE key = "db_version"')
+      self.sqlite_censor_conn.commit()
+      current_version = 3
+    if current_version == 3:
+      self.log(self.logger.INFO, "updating db from version %i to version %i" % (current_version, 4))
+      self.censordb.execute('INSERT INTO commands (command, flag) VALUES (?,?)', ("overchan-board-mod", str(0b1000000000)))
+      self.censordb.execute('UPDATE config SET value = "4" WHERE key = "db_version"')
       self.sqlite_censor_conn.commit()
 
   def run(self):
@@ -515,17 +522,22 @@ class main(threading.Thread):
     #if debug:
     #  return (message_id, groups, time_fs, time_sql)
     return (message_id, groups)
-  
+
   def handle_board_add(self, line):
     # overchan specific, gets handled at overchan plugin via redistribute_command()
     group_name = line.lower().split(' ')[1]
     return (group_name, (group_name,))
-  
+
   def handle_board_del(self, line):
     # overchan specific, gets handled at overchan plugin via redistribute_command()
     group_name = line.lower().split(' ')[1]
     return (group_name, (group_name,))
-  
+
+  def handle_overchan_board_mod(self, line):
+    # overchan specific, gets handled at overchan plugin via redistribute_command()
+    group_name = line.lower().split(' ')[1]
+    return (group_name, (group_name,))
+
   def handle_sticky(self, line):
     self.log(self.logger.DEBUG, "got sticky request: %s" % line)
 

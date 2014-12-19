@@ -72,6 +72,18 @@ class censor(BaseHTTPRequestHandler):
           self.send_redirect(self.root_path, "update ok<br />redirecting you in a moment.", 4)
         except Exception as e:
           self.send_redirect(self.root_path, "update failed: %s<br />redirecting you in a moment." % e, 10)
+      elif path.startswith('/settings?'):
+        key = path[10:]
+        flags_available = int(self.origin.sqlite_censor.execute("SELECT flags FROM keys WHERE key=?", (self.origin.sessions[self.session][1],)).fetchone()[0])
+        flag_required = int(self.origin.sqlite_censor.execute('SELECT flag FROM commands WHERE command="overchan-board-mod"').fetchone()[0])
+        if (flags_available & flag_required) != flag_required:
+          self.send_redirect(self.root_path + 'settings', "not authorized, flag overchan-board-mod missing.<br />redirecting you in a moment.", 7)
+          return
+        try:
+          self.handle_update_board(key)
+          self.send_redirect(self.root_path + 'settings', "update ok<br />redirecting you in a moment.", 4)
+        except Exception as e:
+          self.send_redirect(self.root_path + 'settings', "update board failed: %s<br />redirecting you in a moment." % e, 10)
       else:
         self.send_keys()
       return
@@ -123,17 +135,17 @@ class censor(BaseHTTPRequestHandler):
       elif path.startswith('/stats'):
         self.send_stats()
       elif path.startswith('/settings'):
-        self.send_settings()
+        if path.startswith('/settings?'):
+          key = path[10:]
+          self.send_settings(key)
+        else:
+          self.send_settings()
       elif path.startswith('/showmessage?'):
         self.send_message(path[13:])
       elif path.startswith('/delete?'):
         self.handle_delete(path[8:])
       elif path.startswith('/restore?'):
         self.handle_restore(path[9:])
-      elif path.startswith('/block_board?'):
-        self.handle_block_board(path[13:])
-      elif path.startswith('/unblock_board?'):
-        self.handle_unblock_board(path[15:])
       elif path.startswith('/notimplementedyet'):
         self.send_error('not implemented yet')
       else:
@@ -163,6 +175,26 @@ class censor(BaseHTTPRequestHandler):
     for flag in flags:
       result += int(flag)
     self.origin.censor.add_article((self.origin.sessions[self.session][1], "srnd-acl-mod %s %i %s" % (key, result, local_nick)), "httpd")
+
+  def handle_update_board(self, board_id):
+    post_vars = FieldStorage(
+      fp=self.rfile,
+      headers=self.headers,
+      environ={
+        'REQUEST_METHOD':'POST',
+        'CONTENT_TYPE':self.headers['Content-Type'],
+      }
+    )
+    flags = post_vars.getlist("flags")
+    result = 0
+    if 'local_nick' in post_vars:
+      local_nick = post_vars['local_nick'].value
+    else:
+      local_nick = ''
+    for flag in flags:
+      result += int(flag)
+    board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
+    self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-mod %s %i %s" % (board_name, result, local_nick)), "httpd")
 
   def check_login(self):
     current_date = int(time.time())
@@ -267,7 +299,42 @@ class censor(BaseHTTPRequestHandler):
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write(out)    
+    self.wfile.write(out)
+
+  def send_modify_board(self, board_id):
+    row = self.origin.sqlite_overchan.execute("SELECT group_id, group_name, flags FROM groups WHERE group_id = ?", (board_id,)).fetchone()
+    if not row:
+      return "Board id %s not found" % board_id
+
+    out = self.origin.template_modify_board
+    flags = self.origin.sqlite_overchan.execute("SELECT flag_name, flag FROM flags").fetchall()
+    cur_template = self.origin.template_log_flagnames
+    flaglist = list()
+    flagset_template = self.origin.template_modify_key_flagset
+    out = out.replace("%%board_id%%", str(row[0]))
+    out = out.replace("%%board%%",    row[1])
+    counter = 0
+    for flag in flags:
+      counter += 1
+      if (int(row[2]) & int(flag[1])) == int(flag[1]):
+        checked = 'checked="checked"'
+      else:
+        checked = ''
+      cur_template = flagset_template.replace("%%flag%%", flag[1])
+      cur_template = cur_template.replace("%%flag_name%%", flag[0])
+      cur_template = cur_template.replace("%%checked%%", checked)
+      if counter == 5:
+        cur_template += "<br />"
+      else:
+        cur_template += "&nbsp;"
+      flaglist.append(cur_template)
+    out = out.replace("%%modify_key_flagset%%", "".join(flaglist))
+    del flaglist[:]
+    #self.send_response(200)
+    #self.send_header('Content-type', 'text/html')
+    #self.end_headers()
+    #self.wfile.write(out)
+    return out
 
   def send_keys(self):
     out = self.origin.template_keys
@@ -337,7 +404,7 @@ class censor(BaseHTTPRequestHandler):
       if row[1] != "":
         cur_template = cur_template.replace("%%key_or_nick%%", row[1])
       else:
-        cur_template = cur_template.replace("%%key_or_nick%%", row[0])
+        cur_template = cur_template.replace("%%key_or_nick%%", '%s[..]%s' % (row[0][:6], row[0][-6:]))
       cur_template = cur_template.replace("%%key%%", row[0])
       cur_template = cur_template.replace("%%action%%", row[2])
       cur_template = cur_template.replace("%%reason%%", row[4])
@@ -541,20 +608,38 @@ class censor(BaseHTTPRequestHandler):
     else:
       self.wfile.write('message_id \'%s\' not found' % message_id.replace('<', '&lt;').replace('>', '&gt;'))
     self.wfile.write('</pre></body></html>')
-    
-  def send_settings(self):
-    #out = '<html><head><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%<table class="datatable" id="groups" cellspacing="0" cellpadding="0"><tr><th>posts</th><th>board</th><th>&nbsp;</th></tr>%%boards%%</table></body></html>'
-    out = '<html><head><title>settings</title><link type="text/css" href="/styles.css" rel="stylesheet"></head><body class="mod">%%navigation%%<table class="datatable" id="groups"><tr><th>posts</th><th>board</th><th>&nbsp;</th></tr>%%boards%%</table></body></html>'
+
+  def send_settings(self, board_id =''):
+    out = self.origin.template_settings
     out = out.replace("%%navigation%%", ''.join(self.__get_navigation('settings')))
-    template_unblocked = '<tr><td class="right">%s</td><td>%s</td><td><a href="block_board?%i">block</a></td></tr>'
-    template_blocked = '<tr><td class="right">%s</td><td>%s</td><td><a href="unblock_board?%i">unblock</a></td></tr>'
-    stats = list()
-    for item in self.__stats_groups(ids=True, status=True):
-      if item[3] == 0:
-        stats.append(template_unblocked % item[:3])
-      else:
-        stats.append(template_blocked % item[:3])
-    out = out.replace("%%boards%%", "\n".join(stats))
+    table = list()
+    flags = self.origin.sqlite_overchan.execute("SELECT flag_name, flag FROM flags").fetchall()
+    cur_template = self.origin.template_log_flagnames
+    for flag in flags:
+      table.append(cur_template.replace("%%flag%%", flag[0]))
+    out = out.replace("%%flag_names%%", "\n".join(table))
+    del table[:]
+    flagset_template = self.origin.template_log_flagset
+    flaglist = list()
+    for row in self.origin.sqlite_overchan.execute('SELECT group_name, article_count, group_id, flags FROM groups WHERE group_name != "" ORDER BY abs(article_count) DESC, group_name ASC').fetchall():
+      cur_template = self.origin.template_settings_lst
+      cur_template = cur_template.replace("%%board%%",    str(row[0]))
+      cur_template = cur_template.replace("%%posts%%",    str(row[1]))
+      cur_template = cur_template.replace("%%board_id%%", str(row[2]))
+      for flag in flags:
+        if (int(row[3]) & int(flag[1])) == int(flag[1]):
+          flaglist.append(flagset_template.replace("%%flag%%", '<b style="color: #00E000;">y</b>'))
+        else:
+          flaglist.append(flagset_template.replace("%%flag%%", "n"))
+      cur_template = cur_template.replace("%%flagset%%", "\n".join(flaglist))
+      del flaglist[:]
+      table.append(cur_template)
+    out = out.replace("%%board_list%%", "\n".join(table))
+    del table[:]
+    if board_id:
+      out = out.replace("%%post_form%%", self.send_modify_board(board_id))
+    else:
+      out = out.replace("%%post_form%%", "")
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
@@ -578,22 +663,6 @@ class censor(BaseHTTPRequestHandler):
       self.send_redirect(self.root_path, "redirecting", 0)
     else:
       self.send_redirect(self.root_path, 'message_id does not exist in articles/censored', 5)
-
-  def handle_block_board(self, board_id):
-    try:
-      board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
-      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-del %s" % (board_name)), source="httpd")
-      self.send_redirect(self.root_path + 'settings', "redirecting. it might take a second to synchronize.", 3)
-    except Exception as e:
-      self.send_redirect(self.root_path + 'settings', "could not block board: %s" % e, 10)
-
-  def handle_unblock_board(self, board_id):
-    try:
-      board_name = self.origin.sqlite_overchan.execute('SELECT group_name FROM groups WHERE group_id = ?', (int(board_id),)).fetchone()[0]
-      self.origin.censor.add_article((self.origin.sessions[self.session][1], "overchan-board-add %s" % (board_name)), source="httpd")
-      self.send_redirect(self.root_path + 'settings', "redirecting. it might take a second to synchronize.", 3)
-    except Exception as e:
-      self.send_redirect(self.root_path + 'settings', "could not unblock board: %s" % e, 10)
 
   def send_error(self, errormessage):
     self.send_response(200)
@@ -981,6 +1050,15 @@ class censor_httpd(threading.Thread):
     f.close()
     f = open(os.path.join(template_directory, 'modify_key_flagset.tmpl'), 'r')
     self.httpd.template_modify_key_flagset = f.read()
+    f.close()
+    f = open(os.path.join(template_directory, 'settings.tmpl'), 'r')
+    self.httpd.template_settings = f.read()
+    f.close()
+    f = open(os.path.join(template_directory, 'settings_list.tmpl'), 'r')
+    self.httpd.template_settings_lst = f.read()
+    f.close()
+    f = open(os.path.join(template_directory, 'modify_board.tmpl'), 'r')
+    self.httpd.template_modify_board = f.read()
     f.close()
     #f = open(os.path.join(template_directory, 'message_pic.template'), 'r')
     #self.httpd.template_message_pic = f.read()

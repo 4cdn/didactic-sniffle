@@ -459,12 +459,24 @@ class main(threading.Thread):
                (article_uid text, group_id INTEGER, sender text, email text, subject text, sent INTEGER, parent text, message text, imagename text, imagelink text, thumblink text, last_update INTEGER, public_key text, PRIMARY KEY (article_uid, group_id))''')
     
     # TODO add some flag like ability to carry different data for groups like (removed + added manually + public + hidden + whatever)
-    #self.sqlite.execute('''CREATE TABLE IF NOT EXISTS flags
-    #           (flag_id INTEGER PRIMARY KEY AUTOINCREMENT, flag_name text UNIQUE, flag text)''')
-    #try:
-    #  self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ('removed', str(0b1)))
-    #except:
-    #  pass
+    self.sqlite.execute('''CREATE TABLE IF NOT EXISTS flags
+               (flag_id INTEGER PRIMARY KEY AUTOINCREMENT, flag_name text UNIQUE, flag text)''')
+    try:
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("blocked",      str(0b1)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("hidden",       str(0b10)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-overview",  str(0b100)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("closed",       str(0b1000)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("moder-thread", str(0b10000)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("moder-posts",  str(0b100000)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("no-sync",      str(0b1000000)))
+      self.sqlite.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("spam-fix",     str(0b10000000)))
+      #self.censordb.execute('INSERT INTO flags (flag_name, flag) VALUES (?,?)', ("srnd-acl-mod",               str(0b100000000)))
+    except:
+      pass
+    try:
+      self.sqlite.execute('ALTER TABLE groups ADD COLUMN flags text DEFAULT "0"')
+    except:
+      pass
     try:
       self.sqlite.execute('ALTER TABLE articles ADD COLUMN public_key text')
     except:
@@ -501,34 +513,63 @@ class main(threading.Thread):
 
   def add_article(self, message_id, source="article", timestamp=None):
     self.queue.put((source, message_id, timestamp))
+
+  def overchan_board_add(self, group_name):
+    if '/' in group_name:
+      self.log(self.logger.WARNING, 'got overchan-board-add with invalid group name: \'%s\', ignoring' % group_name)
+      return
+    try:
+      flags = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group_name,)).fetchone()[0])
+      flag  = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="blocked"').fetchone()[0])
+      flags = flags ^ flag
+      self.sqlite.execute('UPDATE groups SET blocked = 0, flags = ? WHERE group_name = ?', (str(flags), group_name))
+      self.log(self.logger.INFO, 'unblocked existing board: \'%s\'' % group_name)
+    except:
+      self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update, flags) VALUES (?,?,?,?)', (group_name, 0, int(time.time()),str(flags)))
+      self.log(self.logger.INFO, 'added new board: \'%s\'' % group_name)
+    self.sqlite_conn.commit()
+    self.regenerate_all_html()
+
+  def overchan_board_del(self, group_name):
+    try:
+      flags = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group_name,)).fetchone()[0])
+      flag  = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="blocked"').fetchone()[0])
+      flags = flags | flag
+      self.sqlite.execute('UPDATE groups SET blocked = 1, flags = ? WHERE group_name = ?', (str(flags),group_name))
+      self.log(self.logger.INFO, 'blocked board: \'%s\'' % group_name)
+      self.sqlite_conn.commit()
+      self.regenerate_all_html()
+    except:
+      self.log(self.logger.WARNING, 'should delete board %s but there is no board with that name' % group_name)
     
   def handle_control(self, lines, timestamp):
     # FIXME how should board-add and board-del react on timestamps in the past / future
     self.log(self.logger.DEBUG, 'got control message: %s' % lines)
     root_posts = list()
     for line in lines.split("\n"):
-      if line.lower().startswith('overchan-board-add'):
-        group_name = line.lower().split(" ")[1]
-        if '/' in group_name:
-          self.log(self.logger.WARNING, 'got overchan-board-add with invalid group name: \'%s\', ignoring' % group_name)
-          continue
+      self.log(self.logger.DEBUG, line)
+      if line.lower().startswith('overchan-board-mod'):
+        group_name, flags = line.split(" ", 2)[1:]
+        flags = int(flags)
         try:
-          self.sqlite.execute('UPDATE groups SET blocked = 0 WHERE group_name = ?', (group_name,))
-          self.log(self.logger.INFO, 'unblocked existing board: \'%s\'' % group_name)
-        except:
-          self.sqlite.execute('INSERT INTO groups(group_name, article_count, last_update) VALUES (?,?,?)', (group_name, 0, int(time.time())))
-          self.log(self.logger.INFO, 'added new board: \'%s\'' % group_name)
-        self.sqlite_conn.commit()
-        self.regenerate_all_html()
+          flag      = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="blocked"').fetchone()[0])
+          flags_old = int(self.sqlite.execute("SELECT flags FROM groups WHERE group_name=?", (group_name,)).fetchone()[0])
+          if ((flags & flag) == flag) and ((flags_old & flag) != flag):
+            self.overchan_board_del(group_name)
+          elif ((flags & flag) != flag) and ((flags_old & flag) == flag):
+            self.overchan_board_add(group_name)
+          self.sqlite.execute('UPDATE groups SET flags = ? WHERE group_name = ?', (flags, group_name))
+          flags = (flags_old ^ flags)
+          flag = int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="hidden"').fetchone()[0]) | int(self.sqlite.execute('SELECT flag FROM flags WHERE flag_name="no-overview"').fetchone()[0])
+          if (flags & flag):
+           self.generate_overview()
+           self.generate_menu()
+        except Exception as e:
+          self.log(self.logger.WARNING, "could not handle overchan-board-mod: %s, line = '%s'" % (e, line))
+      elif line.lower().startswith('overchan-board-add'):
+        self.overchan_board_add(line.lower().split(" ")[1])
       elif line.lower().startswith("overchan-board-del"):
-        group_name = line.lower().split(" ")[1]
-        try:
-          self.sqlite.execute('UPDATE groups SET blocked = 1 WHERE group_name = ?', (group_name,))
-          self.log(self.logger.INFO, 'blocked board: \'%s\'' % group_name)
-          self.sqlite_conn.commit()
-          self.regenerate_all_html()
-        except:
-          self.log(self.logger.WARNING, 'should delete board %s but there is no board with that name' % group_name)
+        self.overchan_board_del(line.lower().split(" ")[1])
       elif line.lower().startswith("overchan-delete-attachment "):
         message_id = line.lower().split(" ")[1]
         if os.path.exists(os.path.join("articles", "restored", message_id)):
