@@ -1360,7 +1360,7 @@ class main(threading.Thread):
     else:
       message = data[4]
     message = self.markup_parser(message)
-    if not single and father == '':
+    if father == '':
       child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (data[0], group_id)).fetchone()[0])
       if child_count > child_view:
         missing = child_count - child_view
@@ -1369,6 +1369,13 @@ class main(threading.Thread):
         else:
           post = "posts"
         message += '\n\n<a href="thread-{0}.html">{1} {2} omitted</a>'.format(message_id_hash[:10], missing, post)
+        if child_view < 10000 and missing > 76:
+          start_link = child_view / 50 * 50 + 50
+          if start_link % 100 == 0: start_link += 50
+          if child_count - start_link > 0:
+            message+=' ['
+            message+=''.join(' <a href="thread-{0}-{1}.html">{1}</a>'.format(message_id_hash[:10], x) for x in range(start_link, child_count, 100))
+            message+=' ]'
     parsed_data['frontend'] = self.frontend(data[0])
     parsed_data['message'] = message
     parsed_data['articlehash'] = message_id_hash[:10]
@@ -1474,7 +1481,7 @@ class main(threading.Thread):
       frontend = 'nntp'
     return frontend
 
-  def generate_thread(self, root_uid):
+  def generate_thread(self, root_uid, thread_page=0):
     root_row = self.sqlite.execute('SELECT article_uid, sender, subject, sent, message, imagename, imagelink, thumblink, public_key, group_id \
         FROM articles WHERE article_uid = ?', (root_uid,)).fetchone()
     if not root_row:
@@ -1485,8 +1492,14 @@ class main(threading.Thread):
       return
     root_message_id_hash = sha1(root_uid).hexdigest()#self.sqlite_hashes.execute('SELECT message_id_hash from article_hashes WHERE message_id = ?', (root_row[0],)).fetchone()
     # FIXME: benchmark sha1() vs hasher_db_query
+    if thread_page > 0:
+      thread_postfix = '-%s' % (thread_page * 50)
+      max_child_view = thread_page * 50
+    else:
+      thread_postfix = ''
+      max_child_view = 10000
     if self.check_board_flags(root_row[9], 'blocked'):
-      path = os.path.join(self.output_directory, 'thread-%s.html' % root_message_id_hash[:10])
+      path = os.path.join(self.output_directory, 'thread-%s%s.html' % (root_message_id_hash[:10], thread_postfix))
       if os.path.isfile(path):
         self.log(self.logger.INFO, 'this thread belongs to some blocked board. deleting %s.' % path)
         try:
@@ -1494,15 +1507,22 @@ class main(threading.Thread):
         except Exception as e:
           self.log(self.logger.ERROR, 'could not delete %s: %s' % (path, e))
       return
-
-    self.log(self.logger.INFO, 'generating %s/thread-%s.html' % (self.output_directory, root_message_id_hash[:10]))
+    if thread_page == 0:
+      child_count = int(self.sqlite.execute('SELECT count(article_uid) FROM articles WHERE parent = ? AND parent != article_uid AND group_id = ?', (root_row[0], root_row[9])).fetchone()[0])
+      if child_count > 80:
+        thread_page = child_count / 50
+    else:
+      thread_page -= 1
+    if thread_page > 0 and thread_page % 2 == 0:
+      thread_page -= 1
+    self.log(self.logger.INFO, 'generating %s/thread-%s%s.html' % (self.output_directory, root_message_id_hash[:10], thread_postfix))
     boardlist, full_board_name_unquoted, full_board_name, board_name_unquoted, board_name = self.generate_board_list(root_row[9], True)
 
     threads = list()
     threads.append(
       self.t_engine_board_threads.substitute(
-        message_root=self.get_root_post(root_row[:-1], root_row[9], 0, root_message_id_hash, True),
-        message_childs=''.join(self.get_childs_posts(root_row[0], root_row[9], root_message_id_hash, root_row[8], 1000, True))
+        message_root=self.get_root_post(root_row[:-1], root_row[9], max_child_view, root_message_id_hash, True),
+        message_childs=''.join(self.get_childs_posts(root_row[0], root_row[9], root_message_id_hash, root_row[8], max_child_view, True))
       )
     )
     t_engine_mappings_thread_single = dict()
@@ -1514,9 +1534,10 @@ class main(threading.Thread):
     t_engine_mappings_thread_single['subject'] = root_row[2][:60]
     t_engine_mappings_thread_single['thread_single'] = ''.join(threads)
 
-    f = codecs.open(os.path.join(self.output_directory, 'thread-{0}.html'.format(root_message_id_hash[:10])), 'w', 'UTF-8')
+    f = codecs.open(os.path.join(self.output_directory, 'thread-{0}{1}.html'.format(root_message_id_hash[:10], thread_postfix)), 'w', 'UTF-8')
     f.write(self.t_engine_thread_single.substitute(t_engine_mappings_thread_single))
     f.close()
+    if thread_page > 0: self.generate_thread(root_uid, thread_page)
 
   def generate_index(self):
     self.log(self.logger.INFO, 'generating %s/index.html' % self.output_directory)
