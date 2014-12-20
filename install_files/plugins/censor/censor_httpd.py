@@ -572,66 +572,23 @@ class censor(BaseHTTPRequestHandler):
     self.wfile.write(out.encode('UTF-8'))
 
   def send_stats(self, page=0):
-    #out = u'<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">table { font-size: 9pt;} td { vertical-align: top; } .top2 { float: left; }.float { float: left; margin-right: 10px; margin-bottom: 10px; } .right { text-align: right; padding-right: 5px; } body { margin: 10px; margin-top: 20px; font-family: monospace; font-size: 9pt; } .navigation { background: #101010; padding-top: 19px; position: fixed; top: 0; width: 100%; }</style></head><body>%%navigation%%%%content%%</body></html>'
-    out = u'<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><title>stats</title><link type="text/css" href="/styles.css" rel="stylesheet"><style type="text/css">.top2 { float: left; } .float { float: left; margin-right: 10px; margin-bottom: 10px; }</style></head><body class="mod">%%navigation%%%%content%%</body></html>'
-    out = out.replace("%%navigation%%", ''.join(self.__get_navigation('stats')))
-    template_2_rows = '<tr><td class="right">%s</td><td>%s</td></tr>'
-    template_3_rows = '<tr><td>%s</td><td class="right">%s</td><td>%s</td></tr>'
-    template_4_rows = '<tr><td>%s</td><td class="right">%s</td><td>%s</td><td>%s</td></tr>'
-    out_table = list()
+    stats_data = dict()
+    t_2_rows = '<tr><td class="right">%s</td><td>%s</td></tr>'
+    t_3_rows = '<tr><td>%s</td><td class="right">%s</td><td>%s</td></tr>'
+    t_4_rows = '<tr><td>%s</td><td class="right">%s</td><td>%s</td><td>%s</td></tr>'
 
-    out_table.append('<div class="top1">')
-    #out_table.append('<table border="1" cellspacing="0" class="float">\n<tr><th>date</th><th>posts</th><th>frontend</th><th>&nbsp;</th></tr>')
-    #for item in self.__stats_usage_by_frontend(7, 30):
-    #  out_table.append(template_4_rows % item)
-    #out_table.append('</table>')
-    out_table.append('<div class="float">')
-    out_table.append('<table class="datatable">\n<tr><th>date</th><th>posts</th><th>&nbsp;</th></tr>')
-    for item in self.__stats_usage(31, 30):
-      out_table.append(template_3_rows % item)
-    out_table.append('</table>')
-    out_table.append('</div>')
-    out_table.append('<div class="float">')
-    out_table.append('<table class="datatable">\n<tr><th>posts</th><th>frontend</th></tr>')
-    for item in self.__stats_frontends():
-      out_table.append(template_2_rows % item)
-    out_table.append('</table>')
-    out_table.append('</div>')
-    out_table.append('<div class="float">')
-    out_table.append('<table class="datatable">\n<tr><th>posts</th><th>group</th></tr>')
-    for item in self.__stats_groups():
-      out_table.append(template_2_rows % item)
-    out_table.append('</table>')
-    out_table.append('</div>')
-    out_table.append('<div class="float">')
-    out_table.append('<table class="datatable">\n<tr><th>month</th><th>posts</th><th>&nbsp;</th></tr>')
-    for item in self.__stats_usage_month(30):
-      out_table.append(template_3_rows % item)
-    out_table.append('</table>')
-    out_table.append('</div>')
-    out_table.append('</div>')
-    
-    out_table.append('<div class="top2">')
-    out_table.append('<div class="float">')
-    out_table.append('<table class="datatable">\n<tr><th>weekday</th><th>posts</th><th>(last 28 days average)</th></tr>')
-    for item in self.__stats_usage_weekday(28):
-      out_table.append(template_3_rows % item)
-    out_table.append('</table>')
-    out_table.append('</div>')
-    out_table.append('<div class="float">')
-    out_table.append('<table class="datatable">\n<tr><th>weekday</th><th>posts</th><th>(totals)</th></tr>')
-    for item in self.__stats_usage_weekday():
-      out_table.append(template_3_rows % item)
-    out_table.append('</table>')
-    out_table.append('</div>')
-    out_table.append('</div>')
-    
-    out = out.replace('%%content%%', '\n'.join(out_table))
-    del out_table
+    stats_data['navigation']             = ''.join(self.__get_navigation('stats'))
+    stats_data['stats_usage']            = ''.join( t_3_rows % x for x in self.__stats_usage(31, 30)    )
+    stats_data['stats_fronteds']         = ''.join( t_2_rows % x for x in self.__stats_frontends()      )
+    stats_data['stats_groups']           = ''.join( t_2_rows % x for x in self.__stats_groups()         )
+    stats_data['stats_usage_month']      = ''.join( t_3_rows % x for x in self.__stats_usage_month(30)  )
+    stats_data['stats_usage_weekday_28'] = ''.join( t_3_rows % x for x in self.__stats_usage_weekday(28))
+    stats_data['stats_usage_weekday']    = ''.join( t_3_rows % x for x in self.__stats_usage_weekday()  )
+
     self.send_response(200)
     self.send_header('Content-type', 'text/html')
     self.end_headers()
-    self.wfile.write(out.encode('UTF-8'))
+    self.wfile.write(self.origin.t_engine_stats.substitute(stats_data))
 
   def send_message(self, message_id):
     self.send_response(200)
@@ -1130,6 +1087,9 @@ class censor_httpd(threading.Thread):
     f.close()
     f = open(os.path.join(template_directory, 'modify_board.tmpl'), 'r')
     self.httpd.template_modify_board = f.read()
+    f.close()
+    f = open(os.path.join(template_directory, 'stats.tmpl'), 'r')
+    self.httpd.t_engine_stats = string.Template(f.read())
     f.close()
     #f = open(os.path.join(template_directory, 'message_pic.template'), 'r')
     #self.httpd.template_message_pic = f.read()
