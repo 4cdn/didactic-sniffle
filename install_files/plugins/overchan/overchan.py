@@ -48,7 +48,8 @@ class main(threading.Thread):
     # TODO: move sleep stuff to config table
     self.sleep_threshold = 10
     self.sleep_time = 0.02
-    
+    self.config = dict()
+
     error = ''
     for arg in ('template_directory', 'output_directory', 'database_directory', 'temp_directory', 'no_file', 'invalid_file', 'css_file', 'title', 'audio_file'):
       if not arg in args:
@@ -80,7 +81,15 @@ class main(threading.Thread):
       except:
         self.loglevel = 2
         self.log(self.logger.WARNING, 'invalid value for debug, using default debug level of 2')
-        
+
+    self.config['site_url'] = 'my-address.i2p'
+    if 'site_url' in args:
+      self.config['site_url'] = args['site_url']
+
+    self.config['local_dest'] = 'i.did.not.read.the.config'
+    if 'local_dest' in args:
+      self.config['local_dest'] = args['local_dest']
+
     self.regenerate_html_on_startup = True
     if 'generate_all' in args:
       if args['generate_all'].lower() in ('false', 'no'):
@@ -241,7 +250,9 @@ class main(threading.Thread):
     f = codecs.open(os.path.join(self.template_directory, 'menu.tmpl'), "r", "utf-8")
     self.t_engine_menu = string.Template(
       string.Template(f.read()).safe_substitute(
-        title=self.html_title
+        title=self.html_title,
+        site_url=self.config['site_url'],
+        local_dest=self.config['local_dest']
       )
     )
     f.close()
